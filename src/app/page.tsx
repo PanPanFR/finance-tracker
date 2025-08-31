@@ -25,7 +25,7 @@ export default function Home() {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [loadingReport, setLoadingReport] = useState(false);
-  const [editModalOpen, setEditModalOpen] = useState(false);
+  // const [editModalOpen, setEditModalOpen] = useState(false);
   const [editTransaction, setEditTransaction] = useState<Transaction | null>(null);
   const [editDesc, setEditDesc] = useState("");
   const [editAmount, setEditAmount] = useState(0);
@@ -83,13 +83,13 @@ export default function Home() {
       const nowIso = new Date().toISOString();
       const transactionsToInsert = parsedItems.map(item => {
         const { description, amount, quantity, category, type } = item;
-        const unitPrice = (quantity && amount && quantity > 0) ? amount / quantity : null;
-        const transactionData: any = {
-          description,
+        const unitPrice = (quantity && amount && quantity > 0) ? amount / quantity : undefined;
+        const transactionData = {
+          description: description || "",
           amount,
           quantity,
           unit_price: unitPrice,
-          category,
+          category: category || "Lainnya",
           type: type || "expense",
           created_at: nowIso,
         };
@@ -202,7 +202,7 @@ export default function Home() {
   const handleEditSave = async () => {
     if (!editTransaction) return;
     setEditLoading(true);
-    const { error, data } = await supabase.from("transactions").update({
+    const { error } = await supabase.from("transactions").update({
       description: editDesc,
       amount: editAmount,
       quantity: editQuantity,

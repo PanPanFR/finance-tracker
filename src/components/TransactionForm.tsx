@@ -36,7 +36,7 @@ export const TransactionForm = ({ onAdd }: TransactionFormProps) => {
         alert("Gagal parsing transaksi. Coba perjelas teksnya, misal: 'beli bakso 20000'.");
         return;
       }
-      let aiCategory = parsed[0]?.category || "";
+      const aiCategory = parsed[0]?.category || "";
       setCategory(aiCategory);
       const nowIso = new Date().toISOString();
       const transactionsToInsert = parsed.map(item => ({
