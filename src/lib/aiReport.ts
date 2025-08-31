@@ -1,6 +1,11 @@
 import { supabase } from "./supabaseClient";
 
 export async function getTransactions() {
+  if (!supabase) {
+    console.error("Supabase client not initialized");
+    return [];
+  }
+  
   const { data, error } = await supabase
     .from("transactions")
     .select("*")
