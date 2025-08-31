@@ -56,6 +56,10 @@ export default function Home() {
     .reduce((sum, t) => sum + (t.amount || 0), 0);
 
   const fetchTransactions = async () => {
+    if (!supabase) {
+      console.error("Supabase client not initialized");
+      return;
+    }
     setIsLoading(true);
     const { data, error } = await supabase
       .from("transactions")
@@ -109,6 +113,10 @@ export default function Home() {
       }));
       setOptimistic(prev => [...optimisticItems, ...prev]);
 
+      if (!supabase) {
+        console.error("Supabase client not initialized");
+        return;
+      }
       const { error } = await supabase.from("transactions").insert(transactionsToInsert);
 
       if (error) {
@@ -167,6 +175,10 @@ export default function Home() {
   // Handler hapus transaksi
   const handleDelete = async (id: string) => {
     if (!confirm("Yakin ingin menghapus transaksi ini?")) return;
+    if (!supabase) {
+      console.error("Supabase client not initialized");
+      return;
+    }
     setTransactions(prev => prev.filter(t => t.id !== id));
     setOptimistic(prev => prev.filter(t => t.id !== id));
     const { error } = await supabase.from("transactions").delete().eq("id", id);
@@ -201,6 +213,10 @@ export default function Home() {
   // Handler simpan edit
   const handleEditSave = async () => {
     if (!editTransaction) return;
+    if (!supabase) {
+      console.error("Supabase client not initialized");
+      return;
+    }
     setEditLoading(true);
     const { error } = await supabase.from("transactions").update({
       description: editDesc,

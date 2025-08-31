@@ -45,6 +45,10 @@ export const TransactionForm = ({ onAdd }: TransactionFormProps) => {
         type: type || item.type || "expense",
         created_at: item.created_at ? new Date(item.created_at).toISOString() : nowIso,
       }));
+      if (!supabase) {
+        console.error("Supabase client not initialized");
+        return;
+      }
       const { error } = await supabase.from("transactions").insert(transactionsToInsert);
       if (error) {
         console.error(error);
