@@ -1,4 +1,4 @@
-# Finance Tracker Webapp
+# Finance Tracker
 
 A modern web application for tracking personal finances built with Next.js, React, and Supabase.
 
@@ -30,8 +30,8 @@ A modern web application for tracking personal finances built with Next.js, Reac
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/PanPanFR/finance-tracker-webapp.git
-cd finance-tracker-webapp
+git clone https://github.com/PanPanFR/finance-tracker.git
+cd finance-tracker
 ```
 
 2. Install dependencies:
