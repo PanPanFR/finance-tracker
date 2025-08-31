@@ -40,10 +40,11 @@ npm install
 ```
 
 3. Set up environment variables:
-Create a `.env.local` file and add your Supabase credentials:
+Create a `.env.local` file and add your credentials:
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+NEXT_PUBLIC_OPENROUTER_KEY=your_openrouter_api_key
 ```
 
 4. Run the development server:
