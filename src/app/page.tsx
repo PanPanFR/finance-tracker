@@ -5,6 +5,10 @@ import { supabase } from "../lib/supabaseClient";
 import { parseTransaction } from "../lib/aiParser";
 import { scanReceipt } from "../lib/ocr";
 import { askReport } from "../lib/aiReport";
+import { useAuth } from "../contexts/AuthContext";
+import AuthForm from "../components/AuthForm";
+import UserProfile from "../components/UserProfile";
+import TransactionForm from "../components/TransactionForm";
 
 type Transaction = {
   id: string;
@@ -14,10 +18,12 @@ type Transaction = {
   quantity?: number;
   unit_price?: number;
   category?: string;
-  type?: "income" | "expense";
+  type: "income" | "expense";
+  user_id?: string;
 };
 
 export default function Home() {
+  const { user, loading: authLoading } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [input, setInput] = useState("");
   const [loadingAdd, setLoadingAdd] = useState(false);
@@ -25,21 +31,18 @@ export default function Home() {
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [loadingReport, setLoadingReport] = useState(false);
-  // const [editModalOpen, setEditModalOpen] = useState(false);
   const [editTransaction, setEditTransaction] = useState<Transaction | null>(null);
-  const [editDesc, setEditDesc] = useState("");
-  const [editAmount, setEditAmount] = useState(0);
-  const [editQuantity, setEditQuantity] = useState<number | undefined>(undefined);
-  const [editLoading, setEditLoading] = useState(false);
-  const [editCategory, setEditCategory] = useState("");
-  const [editType, setEditType] = useState("expense");
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [optimistic, setOptimistic] = useState<Transaction[]>([]);
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    fetchTransactions();
-  }, []);
+    if (user) {
+      fetchTransactions();
+    }
+  }, [user]);
 
   // Filter transactions by category
   const filteredTransactions = selectedCategory === "All" 
@@ -56,14 +59,15 @@ export default function Home() {
     .reduce((sum, t) => sum + (t.amount || 0), 0);
 
   const fetchTransactions = async () => {
-    if (!supabase) {
-      console.error("Supabase client not initialized");
+    if (!user) {
+      console.error("User not authenticated");
       return;
     }
     setIsLoading(true);
     const { data, error } = await supabase
       .from("transactions")
       .select("*")
+      .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -76,6 +80,8 @@ export default function Home() {
   };
 
   const addTransactionFromText = async (text: string) => {
+    if (!user) return;
+    
     setLoadingAdd(true);
     try {
       const parsedItems = await parseTransaction(text);
@@ -96,6 +102,7 @@ export default function Home() {
           category: category || "Lainnya",
           type: type || "expense",
           created_at: nowIso,
+          user_id: user.id,
         };
         return transactionData;
       });
@@ -110,6 +117,7 @@ export default function Home() {
         unit_price: t.unit_price,
         category: t.category,
         type: t.type,
+        user_id: user.id,
       }));
       setOptimistic(prev => [...optimisticItems, ...prev]);
 
@@ -190,52 +198,69 @@ export default function Home() {
     await fetchTransactions();
   };
 
-  // Handler buka inline edit
-  const openEditInline = (t: Transaction) => {
+  // Handler buka edit modal
+  const openEditModal = (t: Transaction) => {
     setEditTransaction(t);
-    setEditDesc(t.description);
-    setEditAmount(t.amount);
-    setEditQuantity(t.quantity);
-    setEditCategory(t.category || "");
-    setEditType(t.type || "expense");
+    setIsEditModalOpen(true);
   };
 
-  // Handler batal inline edit
-  const cancelEditInline = () => {
+  // Handler tutup edit modal
+  const closeEditModal = () => {
     setEditTransaction(null);
-    setEditDesc("");
-    setEditAmount(0);
-    setEditQuantity(undefined);
-    setEditCategory("");
-    setEditType("expense");
+    setIsEditModalOpen(false);
   };
 
   // Handler simpan edit
-  const handleEditSave = async () => {
+  const handleEditSave = async (transactionData: Omit<Transaction, 'id' | 'created_at'>) => {
     if (!editTransaction) return;
     if (!supabase) {
       console.error("Supabase client not initialized");
       return;
     }
-    setEditLoading(true);
+    
     const { error } = await supabase.from("transactions").update({
-      description: editDesc,
-      amount: editAmount,
-      quantity: editQuantity,
-      category: editCategory || "Lainnya",
-      type: editType || "expense",
+      description: transactionData.description,
+      amount: transactionData.amount,
+      category: transactionData.category || "Lainnya",
+      type: transactionData.type || "expense",
+      quantity: transactionData.quantity,
     }).eq("id", editTransaction.id);
-    setEditLoading(false);
+    
     if (error) {
       alert("Gagal update transaksi: " + error.message);
       return;
     }
-    setEditTransaction(null);
-    setEditDesc("");
-    setEditAmount(0);
-    setEditQuantity(undefined);
-    setEditCategory("");
-    setEditType("expense");
+    
+    closeEditModal();
+    await fetchTransactions();
+  };
+
+  // Handler buka add modal
+  const openAddModal = () => {
+    setIsAddModalOpen(true);
+  };
+
+  // Handler tutup add modal
+  const closeAddModal = () => {
+    setIsAddModalOpen(false);
+  };
+
+  // Handler tambah transaksi
+  const handleAddTransaction = async (transactionData: Omit<Transaction, 'id' | 'created_at'>) => {
+    if (!user) return;
+    
+    const { error } = await supabase.from("transactions").insert({
+      ...transactionData,
+      user_id: user.id,
+      created_at: new Date().toISOString(),
+    });
+    
+    if (error) {
+      alert("Gagal menambah transaksi: " + error.message);
+      return;
+    }
+    
+    closeAddModal();
     await fetchTransactions();
   };
 
@@ -255,90 +280,135 @@ export default function Home() {
     { label: "Pengeluaran", value: "expense" },
   ];
 
+  // Show loading while checking authentication
+  if (authLoading) {
+    return (
+      <div className="app-loading-container">
+        <div className="app-loading-content">
+          <div className="app-loading-logo">
+            <div className="logo-icon">💰</div>
+            <h1 className="logo-title">Finance Tracker</h1>
+          </div>
+          
+          <div className="app-loading-animation">
+            <div className="loading-dots">
+              <div className="dot"></div>
+              <div className="dot"></div>
+              <div className="dot"></div>
+            </div>
+          </div>
+          
+          <p className="app-loading-text">Memuat aplikasi...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show login form if not authenticated
+  if (!user) {
+    return <AuthForm onAuthSuccess={() => {}} />;
+  }
+
   return (
     <div className="dashboard-container">
-      {/* Dashboard Header */}
-      <div className="dashboard-header">
+      <div className="dashboard-header-row">
         <h1 className="dashboard-title">AI Finance Tracker</h1>
+        <UserProfile user={user} onLogout={() => {}} />
       </div>
-
-      {/* Main Dashboard Grid */}
       <div className="dashboard-grid">
-        {/* Today's Spending Card */}
-        <div className="balance-card">
-          <div className="balance-label">Pengeluaran Hari Ini</div>
-          <div className="balance-amount">
-            Rp {todaySpending.toLocaleString('id-ID')}
+        {/* Left: Summary & Transactions */}
+        <section className="dashboard-main-left">
+          <div className="spending-income-blue-box">
+            <div className="spending-income-inner">
+              <div className="spending-box blue-box-item">
+                <div className="spending-label">Pengeluaran Hari Ini</div>
+                <div className="spending-amount">Rp {todaySpending.toLocaleString('id-ID')}</div>
+              </div>
+              <div className="income-box blue-box-item">
+                <div className="income-label">Pendapatan Hari Ini</div>
+                <div className="income-amount">Rp {transactions.filter(t => t.type === 'income' && t.created_at.startsWith(today)).reduce((sum, t) => sum + (t.amount || 0), 0).toLocaleString('id-ID')}</div>
+              </div>
+            </div>
           </div>
-        </div>
-
-        {/* Recent Transactions */}
-        <div className="transaction-card">
-          <h3 className="chart-title">Transaksi Terbaru</h3>
-          {isLoading ? (
-            <div className="space-y-3">
-              <div className="transaction-item animate-pulse">
-                <div className="transaction-icon bg-gray-200"></div>
-                <div className="transaction-info">
-                  <div className="transaction-name bg-gray-200 h-4 rounded w-24"></div>
-                  <div className="transaction-category bg-gray-200 h-3 rounded w-16"></div>
-                </div>
-                <div className="transaction-amount bg-gray-200 h-4 rounded w-20"></div>
+          {/* Recent Transactions Section */}
+          <div className="transactions-section card-hover">
+            <h3 className="transactions-title">Transaksi Terbaru</h3>
+            {isLoading ? (
+              <div className="transactions-loading">
+                {[1,2,3,4,5].map(i => (
+                  <div key={i} className="transaction-item card-hover animate-pulse">
+                    <div className="transaction-icon bg-gray-200"></div>
+                    <div className="transaction-info">
+                      <div className="transaction-name bg-gray-200 h-4 rounded w-24"></div>
+                      <div className="transaction-category bg-gray-200 h-3 rounded w-16"></div>
+                    </div>
+                    <div className="transaction-amount bg-gray-200 h-4 rounded w-20"></div>
+                  </div>
+                ))}
               </div>
-              <div className="transaction-item animate-pulse">
-                <div className="transaction-icon bg-gray-200"></div>
-                <div className="transaction-info">
-                  <div className="transaction-name bg-gray-200 h-4 rounded w-20"></div>
-                  <div className="transaction-category bg-gray-200 h-3 rounded w-20"></div>
+            ) : (
+              <>
+              {transactions.length === 0 ? (
+                <div className="transactions-empty">
+                  <h3>Belum ada transaksi hari ini</h3>
+                  <p>Yuk, catat transaksi pertamamu dengan AI Assistant!</p>
                 </div>
-                <div className="transaction-amount bg-gray-200 h-4 rounded w-16"></div>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {transactions.slice(0, 4).map((t) => (
-                <div key={t.id} className="transaction-item">
-                  <div className="transaction-icon" style={{
-                    background: t.type === 'income' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                    color: t.type === 'income' ? '#10b981' : '#ef4444'
-                  }}>
-                    {t.type === 'income' ? '💰' : '💸'}
-                  </div>
-                  <div className="transaction-info">
-                    <div className="transaction-name">{t.description}</div>
-                    <div className="transaction-category">{t.category || 'Lainnya'}</div>
-                  </div>
-                  <div className={`transaction-amount ${t.type === 'income' ? 'income' : 'expense'}`}>
-                    {t.type === 'income' ? '+' : '-'}Rp {(t.amount || 0).toLocaleString('id-ID')}
-                  </div>
+              ) : (
+                <>
+                <div className="transactions-list">
+                    {transactions.slice(0, 5).map((t) => (
+                      <div key={t.id} className="transaction-item-compact card-hover">
+                        <div className="transaction-icon-compact" style={{
+                        background: t.type === 'income' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+                        color: t.type === 'income' ? '#10b981' : '#ef4444'
+                      }}>
+                        {t.type === 'income' ? '💰' : '💸'}
+                      </div>
+                        <div className="transaction-info-compact">
+                          <div className="transaction-name-compact">{t.description}</div>
+                          <div className="transaction-category-compact">
+                            {t.category || 'Lainnya'} • {new Date(t.created_at).toLocaleDateString('id-ID', {
+                              day: 'numeric',
+                              month: 'short'
+                            })}
+                          </div>
+                      </div>
+                        <div className={`transaction-amount-compact ${t.type === 'income' ? 'income' : 'expense'}`}>
+                        {t.type === 'income' ? '+' : '-'}Rp {(t.amount || 0).toLocaleString('id-ID')}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* AI Input Section */}
-      <div className="dashboard-grid-full">
-        <div className="glass-card">
-          <h3 className="section-title">AI Assistant</h3>
-          <div className="transaction-forms">
+                  <div className="transactions-see-all-wrapper">
+                    <a href="/transactions" className="btn-secondary transactions-see-all-btn">Lihat Semua Transaksi →</a>
+                  </div>
+                </>
+              )}
+              </>
+            )}
+          </div>
+        </section>
+        {/* Right: AI Assistant */}
+        <section className="dashboard-main-right">
+        <div className="ai-assistant-card card-hover">
+          <h3 className="ai-assistant-title">AI Assistant</h3>
+          <div className="ai-assistant-content">
             {/* AI Text Input */}
-            <div className="form-section">
-              <h4 className="form-subtitle">Ketik dengan AI</h4>
-              <div className="input-group">
+            <div className="ai-input-section card-hover">
+              <h4 className="ai-section-title">Ketik dengan AI</h4>
+              <div className="ai-input-group">
                 <input
                   type="text"
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="e.g., makan bakso 20rb, beli bensin 50rb, atau tanya laporan"
-                  className="form-input"
+                  placeholder="e.g., makan bakso 20rb, beli bensin 50rb"
+                  className="ai-text-input"
                   onKeyPress={(e) => e.key === 'Enter' && handleManualAdd()}
                 />
                 <button
                   onClick={handleManualAdd}
                   disabled={loadingAdd}
-                  className="btn-primary"
+                  className="ai-send-button"
                 >
                   {loadingAdd ? "Memproses..." : "Kirim"}
                 </button>
@@ -346,250 +416,77 @@ export default function Home() {
             </div>
             
             {/* Upload Receipt */}
-            <div className="form-section">
-              <h4 className="form-subtitle">Upload Struk</h4>
-              <div className="file-upload-group">
+            <div className="ai-upload-section card-hover">
+              <h4 className="ai-section-title">Upload Struk</h4>
+              <div className="ai-upload-group">
+                <label htmlFor="receipt-upload" className="ai-upload-label">
+                  <div className="ai-upload-icon">📷</div>
+                  <div className="ai-upload-text">
+                    <span className="ai-upload-title">Klik untuk upload struk</span>
+                    <span className="ai-upload-subtitle">atau drag & drop gambar</span>
+                  </div>
+                </label>
                 <input
                   type="file"
                   accept="image/*"
                   onChange={handleFileUpload}
-                  className="file-input"
+                  className="ai-file-input"
                   id="receipt-upload"
                 />
-                <label htmlFor="receipt-upload" className="file-upload-label">
-                  <span className="upload-icon">📷</span>
-                  <span className="upload-text">Pilih Foto Struk</span>
-                </label>
                 {ocrProgress && (
-                  <div className="ocr-progress">
-                    <span className="progress-icon">⏳</span>
-                    <span className="progress-text">{ocrProgress}</span>
+                  <div className="ai-upload-progress">
+                    <div className="ai-upload-progress-text">{ocrProgress}</div>
                   </div>
                 )}
               </div>
             </div>
-          </div>
-        </div>
-      </div>
 
-      {/* AI Report Section */}
-      <div className="dashboard-grid-full">
-        <div className="glass-card">
-          <h3 className="section-title">Tanya AI</h3>
-          <div className="ai-report-form">
-            <div className="input-group">
-              <input
-                type="text"
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                placeholder="Tanya tentang keuanganmu... (misal: 'berapa pengeluaran bulan ini?', 'kategori apa yang paling besar?')"
-                className="form-input"
-                onKeyPress={(e) => e.key === 'Enter' && handleAskReport()}
-              />
-              <button
-                onClick={handleAskReport}
-                disabled={loadingReport}
-                className="btn-primary"
-              >
-                {loadingReport ? "Memproses..." : "Tanya AI"}
-              </button>
-            </div>
-            {answer && (
-              <div className="report-box">
-                <div dangerouslySetInnerHTML={{ __html: answer }} />
+            {/* AI Report Section */}
+            <div className="ai-report-section card-hover">
+              <h4 className="ai-section-title">Tanya AI Report</h4>
+              <div className="ai-report-group">
+                <input
+                  type="text"
+                  value={question}
+                  onChange={(e) => setQuestion(e.target.value)}
+                  placeholder="e.g., berapa pengeluaran bulan ini?, kategori mana yang paling besar?"
+                  className="ai-report-input"
+                  onKeyPress={(e) => e.key === 'Enter' && handleAskReport()}
+                />
+                <button
+                  onClick={handleAskReport}
+                  disabled={loadingReport}
+                  className="ai-report-button"
+                >
+                  {loadingReport ? "Memproses..." : "Tanya"}
+                </button>
               </div>
-            )}
+              {answer && (
+                <div className="ai-report-answer">
+                  <div className="ai-report-answer-content">{answer}</div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
+        </section>
       </div>
-
-      {/* All Transactions */}
-      <div className="dashboard-grid-full">
-        <div className="glass-card">
-          <h3 className="text-lg font-semibold mb-4 text-gray-800">Semua Transaksi</h3>
-          {/* Category Filter Buttons */}
-          <div className="category-filters mb-4">
-            {uniqueCategories.map((category) => (
-              <button
-                key={category}
-                onClick={() => setSelectedCategory(category)}
-                className={`category-filter-btn ${selectedCategory === category ? 'active' : ''}`}
-              >
-                {category}
-              </button>
-            ))}
-          </div>
-          {filteredTransactions.length === 0 ? (
-            <p className="text-sm text-gray-500 text-center py-4">Belum ada transaksi.</p>
-          ) : (
-            <ul>
-              {[...optimistic, ...filteredTransactions].map((t) => (
-                <React.Fragment key={t.id}>
-                  <li className="transaction-item">
-                    <div className="flex flex-col">
-                      <span className="font-medium text-gray-800">{t.description}</span>
-                      <span className="text-xs text-gray-500">
-                        {new Date(t.created_at).toLocaleString('id-ID', {
-                          dateStyle: 'medium',
-                          timeStyle: 'short'
-                        })}
-                      </span>
-                      <div className="flex gap-2 mt-2 items-center flex-wrap">
-                        {t.category && (
-                          <span className="badge badge-category">
-                            {t.category}
-                          </span>
-                        )}
-                        {t.type && (
-                          <span className={`badge ${t.type === 'income' ? 'badge-income' : 'badge-expense'}`}>
-                            {t.type === 'income' ? 'Income' : 'Expense'}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <span className="transaction-amount text-center">
-                      Rp {Number(t.unit_price || t.amount || 0).toLocaleString("id-ID")}
-                    </span>
-                    {t.type === 'expense' ? (
-                      t.quantity ? (
-                        <span className="text-sm text-gray-600" style={{ minWidth: 40, textAlign: 'center' }}>
-                          x{t.quantity}
-                        </span>
-                      ) : (
-                        <span className="text-sm text-gray-600" style={{ minWidth: 40, textAlign: 'center', visibility: 'hidden' }}>
-                          x1
-                        </span>
-                      )
-                    ) : (
-                      <span className="text-sm text-gray-600" style={{ minWidth: 40, textAlign: 'center', visibility: 'hidden' }}>
-                        x
-                      </span>
-                    )}
-                    <div className="flex gap-2 ml-2">
-                      <button 
-                        className="btn-edit" 
-                        onClick={() => editTransaction && editTransaction.id === t.id ? cancelEditInline() : openEditInline(t)} 
-                        disabled={!!editTransaction && editTransaction.id !== t.id}
-                      >
-                        {editTransaction && editTransaction.id === t.id ? 'Cancel' : 'Edit'}
-                      </button>
-                      <button 
-                        className="btn-delete" 
-                        onClick={() => handleDelete(t.id)} 
-                        disabled={!!editTransaction && editTransaction.id !== t.id}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </li>
-                  {/* Inline edit form */}
-                  {editTransaction && editTransaction.id === t.id && (
-                    <li className="edit-form-container">
-                      <div className="edit-form-header">
-                        <div className="edit-form-title">{t.description}</div>
-                        <div className="edit-form-subtitle">
-                          {new Date(t.created_at).toLocaleString('id-ID', {
-                            dateStyle: 'medium',
-                            timeStyle: 'short'
-                          })}
-                        </div>
-                        <div className="edit-form-badges">
-                          <span className="edit-form-badge category">{t.category || 'Lainnya'}</span>
-                          <span className={`edit-form-badge type ${t.type === 'income' ? 'income' : ''}`}>
-                            {t.type === 'income' ? 'Income' : 'Expense'}
-                          </span>
-                        </div>
-                      </div>
-                      
-                      <div className="edit-form-fields">
-                        <div className="edit-form-field">
-                          <label className="edit-form-label">Description</label>
-                          <input
-                            type="text"
-                            value={editDesc}
-                            onChange={e => setEditDesc(e.target.value)}
-                            className="edit-form-input"
-                            placeholder="Transaction description"
-                          />
-                        </div>
-                        
-                        <div className="edit-form-field">
-                          <label className="edit-form-label">Amount (Rp)</label>
-                          <input
-                            type="number"
-                            value={editAmount === undefined || editAmount === null ? "" : editAmount}
-                            onChange={e => setEditAmount(e.target.value === "" ? 0 : Number(e.target.value))}
-                            className="edit-form-input"
-                            placeholder="Amount"
-                          />
-                        </div>
-                        
-                        <div className="edit-form-field">
-                          <label className="edit-form-label">Quantity (optional)</label>
-                          <input
-                            type="number"
-                            value={editQuantity === undefined || editQuantity === null ? "" : editQuantity}
-                            onChange={e => setEditQuantity(e.target.value === "" ? undefined : Number(e.target.value))}
-                            className="edit-form-input"
-                            placeholder="Quantity"
-                          />
-                        </div>
-                        
-                        <div className="edit-form-field">
-                          <label className="edit-form-label">Category</label>
-                          <select
-                            value={editCategory}
-                            onChange={e => setEditCategory(e.target.value)}
-                            className="edit-form-select"
-                          >
-                            {CATEGORY_OPTIONS.map(cat => (
-                              <option key={cat} value={cat}>{cat}</option>
-                            ))}
-                          </select>
-                        </div>
-                        
-                        <div className="edit-form-field">
-                          <label className="edit-form-label">Type</label>
-                          <div className="edit-form-radio-group">
-                            {TYPE_OPTIONS.map(option => (
-                              <label key={option.value} className="edit-form-radio-option">
-                                <input
-                                  type="radio"
-                                  name="editType"
-                                  value={option.value}
-                                  checked={editType === option.value}
-                                  onChange={e => setEditType(e.target.value)}
-                                />
-                                <span>{option.label}</span>
-                              </label>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="edit-form-actions">
-                        <button
-                          onClick={handleEditSave}
-                          disabled={editLoading}
-                          className="edit-form-btn edit-form-btn-primary"
-                        >
-                          {editLoading ? "Saving..." : "Save Changes"}
-                        </button>
-                        <button
-                          onClick={cancelEditInline}
-                          className="edit-form-btn edit-form-btn-secondary"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </li>
-                  )}
-                </React.Fragment>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
+      {/* Modal Add/Edit Transaction */}
+      <TransactionForm
+        isOpen={isAddModalOpen}
+        onClose={closeAddModal}
+        onSubmit={handleAddTransaction}
+        mode="add"
+      />
+      {editTransaction && (
+        <TransactionForm
+          transaction={editTransaction}
+          isOpen={isEditModalOpen}
+          onClose={closeEditModal}
+          onSubmit={handleEditSave}
+          mode="edit"
+        />
+      )}
     </div>
   );
 }

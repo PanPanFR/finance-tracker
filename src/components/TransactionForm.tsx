@@ -1,126 +1,201 @@
-import { useState } from "react";
-import { supabase } from "../lib/supabaseClient";
-import { parseTransaction } from "../lib/aiParser";
+"use client";
 
-interface TransactionFormProps {
-  onAdd: () => void;
+import React, { useState, useEffect } from 'react';
+
+interface Transaction {
+  id: string;
+  description: string;
+  amount: number;
+  type: 'income' | 'expense';
+  category?: string;
+  quantity?: number;
+  created_at: string;
 }
 
-export const TransactionForm = ({ onAdd }: TransactionFormProps) => {
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [category, setCategory] = useState("");
-  const [type, setType] = useState("expense");
+interface TransactionFormProps {
+  transaction?: Transaction;
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (transaction: Omit<Transaction, 'id' | 'created_at'>) => void;
+  mode: 'add' | 'edit';
+}
 
-  const CATEGORY_OPTIONS = [
-    "Makanan & Minuman",
-    "Transportasi",
-    "Tagihan",
-    "Hiburan",
-    "Belanja",
-    "Kesehatan",
-    "Pendidikan",
-    "Lainnya",
-  ];
+export default function TransactionForm({ 
+  transaction, 
+  isOpen, 
+  onClose, 
+  onSubmit, 
+  mode 
+}: TransactionFormProps) {
+  const [formData, setFormData] = useState({
+    description: '',
+    amount: '',
+    type: 'expense' as 'income' | 'expense',
+    category: '',
+    quantity: ''
+  });
 
-  const TYPE_OPTIONS = [
-    { label: "Pemasukan", value: "income" },
-    { label: "Pengeluaran", value: "expense" },
-  ];
-
-  const addTransactionFromText = async (text: string) => {
-    setLoading(true);
-    try {
-      const parsed = await parseTransaction(text);
-      if (!parsed) {
-        alert("Gagal parsing transaksi. Coba perjelas teksnya, misal: 'beli bakso 20000'.");
-        return;
-      }
-      const aiCategory = parsed[0]?.category || "";
-      setCategory(aiCategory);
-      const nowIso = new Date().toISOString();
-      const transactionsToInsert = parsed.map(item => ({
-        ...item,
-        category: category || item.category || "Lainnya",
-        type: type || item.type || "expense",
-        created_at: item.created_at ? new Date(item.created_at).toISOString() : nowIso,
-      }));
-      if (!supabase) {
-        console.error("Supabase client not initialized");
-        return;
-      }
-      const { error } = await supabase.from("transactions").insert(transactionsToInsert);
-      if (error) {
-        console.error(error);
-        alert("Gagal menyimpan ke database.");
-        return;
-      }
-      onAdd();
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (transaction && mode === 'edit') {
+      setFormData({
+        description: transaction.description,
+        amount: transaction.amount.toString(),
+        type: transaction.type,
+        category: transaction.category || '',
+        quantity: transaction.quantity?.toString() || ''
+      });
+    } else {
+      setFormData({
+        description: '',
+        amount: '',
+        type: 'expense',
+        category: '',
+        quantity: ''
+      });
     }
+  }, [transaction, mode]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.description || !formData.amount) return;
+
+    onSubmit({
+      description: formData.description,
+      amount: parseFloat(formData.amount),
+      type: formData.type,
+      category: formData.category,
+      quantity: formData.quantity ? parseFloat(formData.quantity) : undefined
+    });
+
+    onClose();
   };
 
-  const handleManualAdd = async () => {
-    if (!input.trim()) return;
-    await addTransactionFromText(input.trim());
-    setInput("");
-    setCategory("");
-    setType("expense");
-  };
+  if (!isOpen) return null;
 
   return (
-    <section className="bg-white rounded-2xl shadow p-5 mb-6">
-      <h2 className="text-xl font-semibold mb-3">Tambah Transaksi (Teks)</h2>
-      <div className="flex gap-2 mb-2">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder='Contoh: "hari ini beli bakso 20 ribu"'
-          className="border rounded-lg px-3 py-2 flex-1"
-        />
-        <button
-          onClick={handleManualAdd}
-          disabled={loading}
-          className="px-4 py-2 rounded-lg bg-blue-600 text-white disabled:opacity-60"
-        >
-          {loading ? "Memproses…" : "Tambah"}
-        </button>
-      </div>
-      <div className="mb-2">
-        <label className="block text-xs mb-1 text-gray-700">Kategori</label>
-        <select
-          className="border rounded-lg px-3 py-2 w-full"
-          value={category}
-          onChange={e => setCategory(e.target.value)}
-        >
-          <option value="">Pilih kategori</option>
-          {CATEGORY_OPTIONS.map(opt => (
-            <option key={opt} value={opt}>{opt}</option>
-          ))}
-        </select>
-      </div>
-      <div className="mb-2">
-        <label className="block text-xs mb-1 text-gray-700">Tipe Transaksi</label>
-        <div className="flex gap-3">
-          {TYPE_OPTIONS.map(opt => (
-            <label key={opt.value} className="flex items-center gap-1 text-xs font-medium">
-              <input
-                type="radio"
-                name="type"
-                value={opt.value}
-                checked={type === opt.value}
-                onChange={() => setType(opt.value)}
-              />
-              {opt.label}
-            </label>
-          ))}
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2 className="modal-title">
+            {mode === 'add' ? 'Tambah Transaksi' : 'Edit Transaksi'}
+          </h2>
+          <button 
+            className="modal-close-btn"
+            onClick={onClose}
+            aria-label="Close modal"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
+
+        <form onSubmit={handleSubmit} className="modal-form">
+          <div className="form-group">
+            <label htmlFor="description" className="form-label">
+              Deskripsi
+            </label>
+            <input
+              type="text"
+              id="description"
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              className="form-input"
+              placeholder="e.g., Makan siang, Beli bensin"
+              required
+            />
+          </div>
+
+          <div className="form-row">
+            <div className="form-group flex-1">
+              <label htmlFor="amount" className="form-label">
+                Jumlah
+              </label>
+              <input
+                type="number"
+                id="amount"
+                value={formData.amount}
+                onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                className="form-input"
+                placeholder="0"
+                min="0"
+                step="1000"
+                required
+              />
+            </div>
+
+            <div className="form-group flex-1">
+              <label htmlFor="quantity" className="form-label">
+                Quantity <span className="text-gray-500 text-sm">(optional)</span>
+              </label>
+              <input
+                type="number"
+                id="quantity"
+                value={formData.quantity}
+                onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
+                className="form-input"
+                placeholder="1"
+                min="0"
+                step="0.1"
+              />
+            </div>
+          </div>
+
+          <div className="form-row">
+            <div className="form-group flex-1">
+              <label htmlFor="type" className="form-label">
+                Tipe
+              </label>
+              <select
+                id="type"
+                value={formData.type}
+                onChange={(e) => setFormData({ ...formData, type: e.target.value as 'income' | 'expense' })}
+                className="form-select"
+              >
+                <option value="expense">Pengeluaran</option>
+                <option value="income">Pendapatan</option>
+              </select>
+            </div>
+
+            <div className="form-group flex-1">
+              <label htmlFor="category" className="form-label">
+                Kategori
+              </label>
+              <select
+                id="category"
+                value={formData.category}
+                onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                className="form-select"
+              >
+                <option value="">Pilih Kategori</option>
+                <option value="Makanan & Minuman">Makanan & Minuman</option>
+                <option value="Transportasi">Transportasi</option>
+                <option value="Belanja">Belanja</option>
+                <option value="Hiburan">Hiburan</option>
+                <option value="Kesehatan">Kesehatan</option>
+                <option value="Pendidikan">Pendidikan</option>
+                <option value="Lainnya">Lainnya</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="modal-actions">
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn-secondary"
+            >
+              Batal
+            </button>
+            <button
+              type="submit"
+              className="btn-primary"
+            >
+              {mode === 'add' ? 'Tambah' : 'Simpan'}
+            </button>
+          </div>
+        </form>
       </div>
-      <p className="text-xs text-gray-500 mt-2">
-        Tip: sertakan nominal angka, misal 20000 / 20 ribu.
-      </p>
-    </section>
+    </div>
   );
-};
+}
