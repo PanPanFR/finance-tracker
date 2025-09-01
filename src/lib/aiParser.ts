@@ -54,12 +54,26 @@ export async function parseTransaction(input: string): Promise<ParsedTransaction
   try {
     console.log("AI Parser - Input:", input);
     
-    console.log("AI Parser - Making API call to backend...");
+    // Get current session token for authentication
+    const { data: { session } } = await import('@supabase/supabase-js').then(supabase => 
+      supabase.createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      ).auth.getSession()
+    );
+    
+    if (!session?.access_token) {
+      console.error("AI Parser - No valid session found");
+      throw new Error("Authentication required. Please login first.");
+    }
+    
+    console.log("AI Parser - Making authenticated API call to backend...");
     
     const res = await fetch("/api/ai/parse", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "Authorization": `Bearer ${session.access_token}`,
       },
       body: JSON.stringify({ input }),
     });
@@ -67,6 +81,12 @@ export async function parseTransaction(input: string): Promise<ParsedTransaction
     if (!res.ok) {
       const errorData = await res.json();
       console.error("AI Parser - API response not ok:", res.status, errorData);
+      
+      // Handle authentication errors specifically
+      if (res.status === 401) {
+        throw new Error("Authentication failed. Please login again.");
+      }
+      
       throw new Error(`Backend API error: ${res.status} - ${errorData.error || 'Unknown error'}`);
     }
 

@@ -1,7 +1,109 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+
+// Rate limiting configuration
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 10; // Max 10 requests per minute
+const rateLimitMap = new Map();
+
+// Rate limiting function
+function checkRateLimit(userId: string): boolean {
+  const now = Date.now();
+  const userLimit = rateLimitMap.get(userId);
+  
+  if (!userLimit) {
+    rateLimitMap.set(userId, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+    return true;
+  }
+  
+  if (now > userLimit.resetTime) {
+    rateLimitMap.set(userId, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+    return true;
+  }
+  
+  if (userLimit.count >= MAX_REQUESTS_PER_WINDOW) {
+    return false;
+  }
+  
+  userLimit.count++;
+  return true;
+}
+
+// Validate user authentication
+async function validateUser(authHeader: string | null): Promise<{ userId: string; user: any } | null> {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+  
+  try {
+    const token = authHeader.substring(7);
+    
+    // Initialize Supabase client
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+    
+    // Verify the token and get user
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    
+    if (error || !user) {
+      return null;
+    }
+    
+    return { userId: user.id, user };
+  } catch (error) {
+    console.error("Auth validation error:", error);
+    return null;
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
+    // 1. CORS Protection
+    const origin = request.headers.get('origin');
+    const allowedOrigins = [
+      'https://finance-tracker-mu-five-89.vercel.app',
+      'http://localhost:3000',
+      'https://localhost:3000'
+    ];
+    
+    if (origin && !allowedOrigins.includes(origin)) {
+      console.error("AI Parser - CORS violation from origin:", origin);
+      return NextResponse.json(
+        { error: 'CORS not allowed' },
+        { status: 403, headers: { 'Access-Control-Allow-Origin': 'null' } }
+      );
+    }
+    
+    // 2. Authentication Check
+    const authHeader = request.headers.get('authorization');
+    const authResult = await validateUser(authHeader);
+    
+    if (!authResult) {
+      console.error("AI Parser - Authentication failed");
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+    
+    const { userId, user } = authResult;
+    console.log("AI Parser - Authenticated user:", userId);
+    
+    // 3. Rate Limiting
+    if (!checkRateLimit(userId)) {
+      console.error("AI Parser - Rate limit exceeded for user:", userId);
+      return NextResponse.json(
+        { 
+          error: 'Rate limit exceeded',
+          details: `Maximum ${MAX_REQUESTS_PER_WINDOW} requests per minute allowed`
+        },
+        { status: 429 }
+      );
+    }
+    
+    // 4. Input Validation
     const { input } = await request.json();
 
     if (!input || typeof input !== 'string') {
@@ -11,8 +113,19 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+    
+    // 5. Input Sanitization
+    const sanitizedInput = input.trim().substring(0, 500); // Max 500 characters
+    
+    if (sanitizedInput.length === 0) {
+      return NextResponse.json(
+        { error: 'Input cannot be empty' },
+        { status: 400 }
+      );
+    }
 
-    console.log("AI Parser - Processing input:", input);
+    console.log("AI Parser - Processing input for user:", userId, "Input:", sanitizedInput);
+    
     console.log("AI Parser - Environment check:", {
       hasOpenRouterKey: !!process.env.OPENROUTER_KEY,
       openRouterKeyLength: process.env.OPENROUTER_KEY?.length || 0,
@@ -61,7 +174,7 @@ export async function POST(request: NextRequest) {
           },
           {
             role: "user",
-            content: input,
+            content: sanitizedInput,
           },
         ],
       }),
@@ -70,6 +183,30 @@ export async function POST(request: NextRequest) {
     if (!res.ok) {
       const errorText = await res.text();
       console.error("AI Parser - OpenRouter API error:", res.status, errorText);
+      
+      // Enhanced error handling for 401
+      if (res.status === 401) {
+        console.error("AI Parser - 401 Unauthorized - Possible causes:");
+        console.error("1. API key expired or invalid");
+        console.error("2. API key format incorrect");
+        console.error("3. Account suspended or rate limited");
+        console.error("4. Wrong API key copied");
+        
+        return NextResponse.json(
+          { 
+            error: 'OpenRouter API authentication failed (401)',
+            details: 'Please check your API key. It might be expired, invalid, or incorrectly copied.',
+            suggestions: [
+              'Verify the API key in your OpenRouter dashboard',
+              'Check if the key starts with "sk-or-v1-"',
+              'Ensure the key is at least 50 characters long',
+              'Try regenerating a new API key'
+            ]
+          },
+          { status: 401 }
+        );
+      }
+      
       return NextResponse.json(
         { 
           error: `OpenRouter API error: ${res.status}`,
@@ -210,7 +347,7 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    console.log("AI Parser - Final validated result:", parsed);
+    console.log("AI Parser - Final validated result for user:", userId, "Result:", parsed);
     return NextResponse.json({ result: parsed });
   } catch (error) {
     console.error("AI Parser - Unexpected error:", error);
