@@ -54,69 +54,31 @@ export async function parseTransaction(input: string): Promise<ParsedTransaction
   try {
     console.log("AI Parser - Input:", input);
     
-    if (!process.env.NEXT_PUBLIC_OPENROUTER_KEY) {
-      console.error("AI Parser - Missing OPENROUTER_KEY");
-      throw new Error("OpenRouter API key not configured");
-    }
+    console.log("AI Parser - Making API call to backend...");
     
-    console.log("AI Parser - Making API call to OpenRouter...");
-    
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    const res = await fetch("/api/ai/parse", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${process.env.NEXT_PUBLIC_OPENROUTER_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model: "meta-llama/llama-3.3-8b-instruct:free",
-        messages: [
-          {
-            role: "system",
-            content: `Kamu adalah API parser transaksi.
-            Output HANYA dalam format JSON array, bahkan jika hanya 1 item.
-            Format: [{ description: string, amount: number (selalu TOTAL harga), quantity?: number, created_at?: string (ISO 8601), category?: string, type?: "income" | "expense" }]
-            - description: nama barang/aktivitas/merchant, misal "KRL", "Starbucks", "Shopee", "Listrik PLN", "Grab", "Indomaret", "Bensin", "Netflix", "BPJS", dst. Jangan isi dengan kategori.
-            - category: salah satu dari: 'Makanan & Minuman', 'Transportasi', 'Tagihan', 'Hiburan', 'Belanja', 'Kesehatan', 'Pendidikan', 'Lainnya'.
-            - type: klasifikasikan 'income' (pemasukan) vs 'expense' (pengeluaran). Contoh income: gaji, bonus, refund, transfer masuk, jual barang. Selain itu anggap 'expense'.
-            - 'amount' HARUS total harga. JANGAN harga satuan.
-            - Jika ada waktu (misal: 'kemarin', 'tadi pagi jam 7'), konversi ke ISO 8601. Zona waktu: Asia/Jakarta (WIB/GMT+7).
-              - pagi: 05:00-10:00
-              - siang: 11:00-14:00
-              - sore: 15:00-18:00
-              - malam: 19:00-23:00
-            - Jika ada beberapa barang (misal: 'A dan B'), pisahkan jadi beberapa objek dalam array.
-            - Jika tidak yakin, gunakan 'Lainnya' untuk category dan 'expense' untuk type.
-            - Waktu sekarang (WIB): ${new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' })}`,
-          },
-          {
-            role: "user",
-            content: input,
-          },
-        ],
-      }),
+      body: JSON.stringify({ input }),
     });
 
     if (!res.ok) {
-      const errorText = await res.text();
-      console.error("AI Parser - API response not ok:", res.status, errorText);
-      throw new Error(`OpenRouter API error: ${res.status} - ${errorText}`);
+      const errorData = await res.json();
+      console.error("AI Parser - API response not ok:", res.status, errorData);
+      throw new Error(`Backend API error: ${res.status} - ${errorData.error || 'Unknown error'}`);
     }
 
     const data = await res.json();
     console.log("AI Parser - API response data:", data);
     
-    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+    if (!data.result) {
       console.error("AI Parser - Invalid API response format:", data);
       throw new Error("Invalid API response format");
     }
     
-    const raw = data.choices[0].message.content;
-    console.log("AI Parser - Raw response:", raw);
-
-    const parsed = JSON.parse(raw);
-    console.log("AI Parser - Parsed JSON:", parsed);
-    
-    const result = TransactionsSchema.parse(parsed);
+    const result = TransactionsSchema.parse(data.result);
     console.log("AI Parser - Final result:", result);
     
     return result;
