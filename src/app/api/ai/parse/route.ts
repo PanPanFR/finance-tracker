@@ -100,16 +100,117 @@ export async function POST(request: NextRequest) {
       console.log("AI Parser - Parsed JSON successfully:", parsed);
     } catch (parseError) {
       console.error("AI Parser - JSON parse error:", parseError, "Raw content:", raw);
+      
+      // Try to extract JSON from the response if it's wrapped in text
+      console.log("AI Parser - Attempting to extract JSON from response...");
+      
+      let extractedJson = null;
+      
+      // Method 1: Look for JSON between ```json and ``` markers
+      const jsonBlockMatch = raw.match(/```json\s*([\s\S]*?)\s*```/);
+      if (jsonBlockMatch) {
+        try {
+          extractedJson = JSON.parse(jsonBlockMatch[1].trim());
+          console.log("AI Parser - Successfully extracted JSON from code block");
+        } catch (e) {
+          console.log("AI Parser - Failed to parse JSON from code block");
+        }
+      }
+      
+      // Method 2: Look for JSON array starting with [ and ending with ]
+      if (!extractedJson) {
+        const arrayMatch = raw.match(/\[[\s\S]*\]/);
+        if (arrayMatch) {
+          try {
+            extractedJson = JSON.parse(arrayMatch[0]);
+            console.log("AI Parser - Successfully extracted JSON array from response");
+          } catch (e) {
+            console.log("AI Parser - Failed to parse JSON array from response");
+          }
+        }
+      }
+      
+      // Method 3: Try to clean up common AI response issues
+      if (!extractedJson) {
+        let cleanedResponse = raw
+          .replace(/^[^[]*/, '') // Remove text before first [
+          .replace(/[^]*$/, '') // Remove text after last ]
+          .replace(/```/g, '') // Remove markdown code blocks
+          .replace(/json/g, '') // Remove "json" text
+          .trim();
+        
+        // Ensure it starts and ends with brackets
+        if (!cleanedResponse.startsWith('[')) cleanedResponse = '[' + cleanedResponse;
+        if (!cleanedResponse.endsWith(']')) cleanedResponse = cleanedResponse + ']';
+        
+        try {
+          extractedJson = JSON.parse(cleanedResponse);
+          console.log("AI Parser - Successfully parsed cleaned response");
+        } catch (e) {
+          console.log("AI Parser - Failed to parse cleaned response");
+        }
+      }
+      
+      if (extractedJson) {
+        parsed = extractedJson;
+        console.log("AI Parser - Using extracted JSON:", parsed);
+      } else {
+        // If all parsing attempts fail, return detailed error
+        console.error("AI Parser - All JSON parsing attempts failed");
+        return NextResponse.json(
+          { 
+            error: 'AI response is not valid JSON',
+            details: 'The AI returned invalid JSON format and could not be parsed',
+            rawContent: raw,
+            suggestions: [
+              'The AI might have returned text instead of JSON',
+              'Check if the AI model is working correctly',
+              'Try regenerating the response',
+              'Check the raw AI response for formatting issues'
+            ]
+          },
+          { status: 500 }
+        );
+      }
+    }
+    
+    // Validate the parsed result structure
+    if (!Array.isArray(parsed)) {
+      console.error("AI Parser - Parsed result is not an array:", parsed);
       return NextResponse.json(
         { 
-          error: 'AI response is not valid JSON',
-          details: 'The AI returned invalid JSON format',
-          rawContent: raw
+          error: 'AI response is not in expected format',
+          details: 'Expected JSON array but got: ' + typeof parsed,
+          parsedContent: parsed
         },
         { status: 500 }
       );
     }
     
+    // Validate each item in the array
+    for (let i = 0; i < parsed.length; i++) {
+      const item = parsed[i];
+      if (!item.description || typeof item.amount !== 'number') {
+        console.error(`AI Parser - Invalid item at index ${i}:`, item);
+        return NextResponse.json(
+          { 
+            error: 'AI response contains invalid transaction items',
+            details: `Item at index ${i} is missing required fields`,
+            invalidItem: item,
+            expectedFormat: {
+              description: 'string (required)',
+              amount: 'number (required)',
+              quantity: 'number (optional)',
+              category: 'string (optional)',
+              type: '"income" or "expense" (optional)'
+            }
+          },
+          { status: 500 }
+        );
+      }
+    }
+    
+    console.log("AI Parser - Final validated result:", parsed);
     return NextResponse.json({ result: parsed });
   } catch (error) {
     console.error("AI Parser - Unexpected error:", error);
