@@ -32,28 +32,44 @@ function checkRateLimit(userId: string): boolean {
 // Validate user authentication
 async function validateUser(authHeader: string | null): Promise<{ userId: string; user: any } | null> {
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    console.error("Auth validation - No Bearer token found");
     return null;
   }
   
   try {
     const token = authHeader.substring(7);
+    console.log("Auth validation - Token received, length:", token.length);
     
-    // Initialize Supabase client
+    // Initialize Supabase client with ANON key for JWT validation
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     );
+    
+    console.log("Auth validation - Supabase client initialized");
     
     // Verify the token and get user
     const { data: { user }, error } = await supabase.auth.getUser(token);
     
-    if (error || !user) {
+    if (error) {
+      console.error("Auth validation - Supabase auth error:", error);
       return null;
     }
     
+    if (!user) {
+      console.error("Auth validation - No user found in token");
+      return null;
+    }
+    
+    console.log("Auth validation - User authenticated successfully:", {
+      userId: user.id,
+      email: user.email,
+      hasEmail: !!user.email
+    });
+    
     return { userId: user.id, user };
   } catch (error) {
-    console.error("Auth validation error:", error);
+    console.error("Auth validation - Unexpected error:", error);
     return null;
   }
 }
