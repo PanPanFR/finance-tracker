@@ -26,7 +26,6 @@ export const supabase = createClient(
   supabaseKey || "placeholder-key",
   {
     auth: {
-      // Use dynamic site URL for redirects
       flowType: 'pkce',
       autoRefreshToken: true,
       detectSessionInUrl: true

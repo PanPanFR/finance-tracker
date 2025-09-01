@@ -14,6 +14,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [showResend, setShowResend] = useState(false); // New state for resend button
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,6 +53,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
         if (error) throw error;
 
         setMessage('Registrasi berhasil! Silakan cek email Anda untuk verifikasi.');
+        setShowResend(true); // Show resend button after successful registration
       }
     } catch (error: any) {
       setError(error.message || 'Terjadi kesalahan. Silakan coba lagi.');
@@ -76,6 +78,37 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
       if (error) throw error;
     } catch (error: any) {
       setError(error.message || 'Gagal login dengan Google. Silakan coba lagi.');
+    }
+  };
+
+  const handleResendEmail = async () => {
+    if (!isSupabaseConfigured()) {
+      setError('Supabase belum dikonfigurasi. Silakan cek environment variables.');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    setMessage('');
+
+    try {
+      // Use resend method for email verification
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email,
+        options: {
+          emailRedirectTo: `${getCurrentSiteUrl()}/auth/callback`
+        }
+      });
+
+      if (error) throw error;
+
+      setMessage('Email verifikasi berhasil dikirim ulang! Silakan cek email Anda.');
+      setShowResend(false); // Hide resend button after successful resend
+    } catch (error: any) {
+      setError(error.message || 'Gagal mengirim ulang email verifikasi. Silakan coba lagi.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -154,6 +187,25 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
             )}
           </button>
         </form>
+
+        {showResend && (
+          <div className="auth-resend-email">
+            <button
+              onClick={handleResendEmail}
+              disabled={loading}
+              className="auth-resend-button"
+            >
+              {loading ? (
+                <div className="auth-loading">
+                  <div className="auth-spinner"></div>
+                  Memproses...
+                </div>
+              ) : (
+                'Kirim Ulang Email Verifikasi'
+              )}
+            </button>
+          </div>
+        )}
 
         <div className="auth-divider">
           <span className="auth-divider-text">Atau</span>
