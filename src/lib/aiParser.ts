@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { supabase } from "./supabaseClient";
 
 const TransactionSchema = z.object({
   description: z.string(),
@@ -55,17 +56,32 @@ export async function parseTransaction(input: string): Promise<ParsedTransaction
     console.log("AI Parser - Input:", input);
     
     // Get current session token for authentication
-    const { data: { session } } = await import('@supabase/supabase-js').then(supabase => 
-      supabase.createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-      ).auth.getSession()
-    );
+    console.log("AI Parser - Getting session token...");
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
     
-    if (!session?.access_token) {
-      console.error("AI Parser - No valid session found");
+    if (sessionError) {
+      console.error("AI Parser - Session error:", sessionError);
+      throw new Error(`Session error: ${sessionError.message}`);
+    }
+    
+    if (!session) {
+      console.error("AI Parser - No session found");
       throw new Error("Authentication required. Please login first.");
     }
+    
+    if (!session.access_token) {
+      console.error("AI Parser - No access token in session");
+      throw new Error("Authentication required. Please login first.");
+    }
+    
+    // Log token info for debugging (without exposing full token)
+    console.log("AI Parser - Session found:", {
+      hasToken: !!session.access_token,
+      tokenLength: session.access_token?.length || 0,
+      tokenPrefix: session.access_token?.substring(0, 10) || 'N/A',
+      expiresAt: session.expires_at,
+      userId: session.user?.id
+    });
     
     console.log("AI Parser - Making authenticated API call to backend...");
     
@@ -84,6 +100,10 @@ export async function parseTransaction(input: string): Promise<ParsedTransaction
       
       // Handle authentication errors specifically
       if (res.status === 401) {
+        console.error("AI Parser - 401 Unauthorized - Possible causes:");
+        console.error("1. Token expired");
+        console.error("2. Token format invalid");
+        console.error("3. Server-side validation failed");
         throw new Error("Authentication failed. Please login again.");
       }
       
