@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
-import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
+import { supabase, isSupabaseConfigured, getCurrentSiteUrl } from '../lib/supabaseClient';
 
 interface AuthFormProps {
   onAuthSuccess: () => void;
@@ -40,10 +40,13 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
         setMessage('Login berhasil!');
         setTimeout(() => onAuthSuccess(), 1000);
       } else {
-        // Register
+        // Register with dynamic redirect URL
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
+          options: {
+            emailRedirectTo: `${getCurrentSiteUrl()}/auth/callback`
+          }
         });
 
         if (error) throw error;
@@ -67,7 +70,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`
+          redirectTo: `${getCurrentSiteUrl()}/auth/callback`
         }
       });
       if (error) throw error;

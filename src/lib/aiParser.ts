@@ -13,8 +13,54 @@ const TransactionsSchema = z.array(TransactionSchema);
 
 export type ParsedTransaction = z.infer<typeof TransactionSchema>;
 
+// Fallback manual parser for common patterns
+function manualParseFallback(input: string): ParsedTransaction[] | null {
+  const lowerInput = input.toLowerCase();
+  
+  // Check for "kemarin" pattern
+  if (lowerInput.includes('kemarin')) {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(12, 0, 0, 0); // Set to noon
+    
+    // Extract amount (look for numbers)
+    const amountMatch = input.match(/(\d+)\s*(rb|ribu|k|ratusan|puluhan)/i);
+    const amount = amountMatch ? parseInt(amountMatch[1]) * (amountMatch[2].includes('rb') || amountMatch[2].includes('ribu') ? 1000 : 1) : 0;
+    
+    // Extract description (remove date and amount words)
+    let description = input
+      .replace(/kemarin\s*/i, '')
+      .replace(/\d+\s*(rb|ribu|k|ratusan|puluhan)/gi, '')
+      .replace(/\d+\s*gelas/gi, '')
+      .replace(/\d+\s*biji/gi, '')
+      .trim();
+    
+    if (description && amount > 0) {
+      return [{
+        description,
+        amount,
+        quantity: 1,
+        created_at: yesterday.toISOString(),
+        category: 'Makanan & Minuman',
+        type: 'expense'
+      }];
+    }
+  }
+  
+  return null;
+}
+
 export async function parseTransaction(input: string): Promise<ParsedTransaction[] | null> {
   try {
+    console.log("AI Parser - Input:", input);
+    
+    if (!process.env.NEXT_PUBLIC_OPENROUTER_KEY) {
+      console.error("AI Parser - Missing OPENROUTER_KEY");
+      throw new Error("OpenRouter API key not configured");
+    }
+    
+    console.log("AI Parser - Making API call to OpenRouter...");
+    
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -22,7 +68,7 @@ export async function parseTransaction(input: string): Promise<ParsedTransaction
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "gpt-3.5-turbo",
+        model: "meta-llama/llama-3.3-8b-instruct:free",
         messages: [
           {
             role: "system",
@@ -50,13 +96,42 @@ export async function parseTransaction(input: string): Promise<ParsedTransaction
       }),
     });
 
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error("AI Parser - API response not ok:", res.status, errorText);
+      throw new Error(`OpenRouter API error: ${res.status} - ${errorText}`);
+    }
+
     const data = await res.json();
+    console.log("AI Parser - API response data:", data);
+    
+    if (!data.choices || !data.choices[0] || !data.choices[0].message) {
+      console.error("AI Parser - Invalid API response format:", data);
+      throw new Error("Invalid API response format");
+    }
+    
     const raw = data.choices[0].message.content;
+    console.log("AI Parser - Raw response:", raw);
 
     const parsed = JSON.parse(raw);
-    return TransactionsSchema.parse(parsed);
+    console.log("AI Parser - Parsed JSON:", parsed);
+    
+    const result = TransactionsSchema.parse(parsed);
+    console.log("AI Parser - Final result:", result);
+    
+    return result;
   } catch (err) {
-    console.error("Parse error:", err);
+    console.error("AI Parser - Parse error:", err);
+    console.log("AI Parser failed, trying manual fallback...");
+    
+    // Try manual fallback
+    const fallbackResult = manualParseFallback(input);
+    if (fallbackResult) {
+      console.log("Manual fallback successful:", fallbackResult);
+      return fallbackResult;
+    }
+    
+    console.error("AI Parser - Both AI and manual fallback failed");
     return null;
   }
 }

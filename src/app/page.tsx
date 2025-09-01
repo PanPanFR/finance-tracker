@@ -84,16 +84,23 @@ export default function Home() {
     
     setLoadingAdd(true);
     try {
+      console.log("Starting AI parsing for:", text);
+      
       const parsedItems = await parseTransaction(text);
+      console.log("AI parsing result:", parsedItems);
+      
       if (!parsedItems || parsedItems.length === 0) {
         alert("Gagal parsing transaksi. Coba perjelas teksnya, misal: 'beli bakso 20000'.");
         return;
       }
 
-      const nowIso = new Date().toISOString();
       const transactionsToInsert = parsedItems.map(item => {
-        const { description, amount, quantity, category, type } = item;
+        const { description, amount, quantity, category, type, created_at } = item;
         const unitPrice = (quantity && amount && quantity > 0) ? amount / quantity : undefined;
+        
+        // Use AI parsed date if available, otherwise use current time
+        const transactionDate = created_at || new Date().toISOString();
+        
         const transactionData = {
           description: description || "",
           amount,
@@ -101,7 +108,7 @@ export default function Home() {
           unit_price: unitPrice,
           category: category || "Lainnya",
           type: type || "expense",
-          created_at: nowIso,
+          created_at: transactionDate,
           user_id: user.id,
         };
         return transactionData;
@@ -112,7 +119,7 @@ export default function Home() {
         id: `temp-${Math.random().toString(36).slice(2)}`,
         description: t.description,
         amount: t.amount,
-        created_at: nowIso,
+        created_at: t.created_at,
         quantity: t.quantity,
         unit_price: t.unit_price,
         category: t.category,
@@ -125,14 +132,19 @@ export default function Home() {
         console.error("Supabase client not initialized");
         return;
       }
+      
+      console.log("Inserting transactions to database:", transactionsToInsert);
+      
       const { error } = await supabase.from("transactions").insert(transactionsToInsert);
 
       if (error) {
-        console.error(error);
-        alert("Gagal menyimpan ke database.");
+        console.error("Database insert error:", error);
+        alert("Gagal menyimpan ke database: " + error.message);
         setOptimistic(prev => prev.filter(x => !x.id.startsWith("temp-")));
         return;
       }
+      
+      console.log("Successfully inserted transactions to database");
 
       await fetchTransactions();
     } finally {
@@ -168,9 +180,13 @@ export default function Home() {
 
   const handleAskReport = async () => {
     if (!question.trim()) return;
+    if (!user) {
+      alert("Silakan login terlebih dahulu.");
+      return;
+    }
     setLoadingReport(true);
     try {
-      const reply = await askReport(question.trim());
+      const reply = await askReport(question.trim(), user.id);
       setAnswer(reply);
     } catch (err) {
       console.error(err);
