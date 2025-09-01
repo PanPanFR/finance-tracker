@@ -86,7 +86,42 @@ For detailed setup instructions, see [SETUP_AUTH.md](./SETUP_AUTH.md) and [SETUP
 
 ## Deployment
 
-This project is configured for deployment on Vercel. Simply connect your GitHub repository to Vercel for automatic deployments.
+This project is configured for deployment on Vercel with automatic deployments on every push to the main branch.
+
+### Auto-Deployment Setup
+
+1. **Connect GitHub Repository**:
+   - Go to [Vercel Dashboard](https://vercel.com/dashboard)
+   - Click "New Project"
+   - Import your GitHub repository
+   - Select the repository and branch (main/master)
+
+2. **Configure Build Settings**:
+   - Framework Preset: Next.js
+   - Build Command: `npm run build`
+   - Output Directory: `.next`
+   - Install Command: `npm install`
+
+3. **Set Environment Variables**:
+   - Add your environment variables in Vercel dashboard
+   - Or use Vercel CLI: `vercel env add`
+
+4. **Enable Auto-Deploy**:
+   - In project settings, ensure "Auto Deploy" is enabled
+   - Set production branch to `main` or `master`
+
+### Manual Deployment (if needed)
+
+```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Login to Vercel
+vercel login
+
+# Deploy
+vercel --prod
+```
 
 ### Environment Variables for Production
 
@@ -94,6 +129,32 @@ Make sure to set the following environment variables in your Vercel dashboard:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `NEXT_PUBLIC_OPENROUTER_KEY`
+
+### Troubleshooting Auto-Deployment
+
+If auto-deployment is not working:
+
+1. **Check Vercel Dashboard**:
+   - Go to Project Settings → Git
+   - Ensure "Auto Deploy" is enabled
+   - Verify the correct branch is selected
+
+2. **Check GitHub Integration**:
+   - Ensure Vercel has access to your repository
+   - Check if webhooks are properly configured
+
+3. **Force Redeploy**:
+   ```bash
+   # Using Vercel CLI
+   vercel --prod
+   
+   # Or trigger from dashboard
+   # Go to Deployments → Redeploy
+   ```
+
+4. **Check Build Logs**:
+   - Review build logs in Vercel dashboard
+   - Ensure all environment variables are set correctly
 
 ## Contributing
 
