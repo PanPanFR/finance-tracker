@@ -61,7 +61,7 @@ export default function TransactionsPage() {
   // Unique categories from data
   const uniqueCategories = [
     "All",
-    ...Array.from(new Set(transactions.map(t => t.category).filter(Boolean)))
+    ...Array.from(new Set(transactions.map(t => t.category).filter((cat): cat is string => Boolean(cat))))
   ];
 
   // Modal handlers
