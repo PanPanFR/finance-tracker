@@ -29,8 +29,7 @@ export const supabase = createClient(
       // Use dynamic site URL for redirects
       flowType: 'pkce',
       autoRefreshToken: true,
-      detectSessionInUrl: true,
-      redirectTo: `${getSiteUrl()}/auth/callback`
+      detectSessionInUrl: true
     }
   }
 );
