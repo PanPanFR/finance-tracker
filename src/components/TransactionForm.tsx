@@ -8,7 +8,6 @@ interface Transaction {
   amount: number;
   type: 'income' | 'expense';
   category?: string;
-  quantity?: number;
   created_at: string;
 }
 
@@ -31,8 +30,7 @@ export default function TransactionForm({
     description: '',
     amount: '',
     type: 'expense' as 'income' | 'expense',
-    category: '',
-    quantity: ''
+    category: ''
   });
 
   useEffect(() => {
@@ -41,16 +39,14 @@ export default function TransactionForm({
         description: transaction.description,
         amount: transaction.amount.toString(),
         type: transaction.type,
-        category: transaction.category || '',
-        quantity: transaction.quantity?.toString() || ''
+        category: transaction.category || ''
       });
     } else {
       setFormData({
         description: '',
         amount: '',
         type: 'expense',
-        category: '',
-        quantity: ''
+        category: ''
       });
     }
   }, [transaction, mode]);
@@ -63,8 +59,7 @@ export default function TransactionForm({
       description: formData.description,
       amount: parseFloat(formData.amount),
       type: formData.type,
-      category: formData.category,
-      quantity: formData.quantity ? parseFloat(formData.quantity) : undefined
+      category: formData.category
     });
 
     onClose();

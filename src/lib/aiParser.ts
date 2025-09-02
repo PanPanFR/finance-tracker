@@ -20,29 +20,56 @@ function manualParseFallback(input: string): ParsedTransaction[] | null {
   
   // Check for "kemarin" pattern
   if (lowerInput.includes('kemarin')) {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    yesterday.setHours(12, 0, 0, 0); // Set to noon
-    
-    // Extract amount (look for numbers)
-    const amountMatch = input.match(/(\d+)\s*(rb|ribu|k|ratusan|puluhan)/i);
-    const amount = amountMatch ? parseInt(amountMatch[1]) * (amountMatch[2].includes('rb') || amountMatch[2].includes('ribu') ? 1000 : 1) : 0;
-    
-    // Extract description (remove date and amount words)
+    // Build yesterday date in Asia/Jakarta, set to 12:00 local
+    const now = new Date();
+    const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' });
+    const [y, m, d] = fmt.format(now).split('-').map(Number);
+    const jkt = new Date(Date.UTC(y, m - 1, d));
+    jkt.setUTCDate(jkt.getUTCDate() - 1);
+    // 12:00 WIB equals 05:00 UTC (WIB=UTC+7). Use 05:00Z to avoid TZ inversion
+    const isoYesterday = new Date(Date.UTC(jkt.getUTCFullYear(), jkt.getUTCMonth(), jkt.getUTCDate(), 5, 0, 0)).toISOString();
+
+    // Extract quantity and unit price if said like "2" and "harganya 20 ribu"
+    const qtyMatch = lowerInput.match(/\b(\d+(?:[.,]\d+)?)\b(?=[^\d]*,|[^\d]*\s*beli|[^\d]*\s*bola|[^\d]*\s*$)/);
+    const priceMatch = lowerInput.match(/harganya\s*([\d.,]+\s*(rb|ribu|k|juta|jt)?)/) || lowerInput.match(/seharga\s*([\d.,]+\s*(rb|ribu|k|juta|jt)?)/);
+
+    function parseIndoNumber(txt: string): number {
+      const t = txt.toLowerCase().trim();
+      const m = t.match(/([\d.,]+)\s*(rb|ribu|k|juta|jt)?/);
+      if (!m) return NaN;
+      const base = Number(m[1].replace(/\./g, '').replace(',', '.'));
+      const unit = (m[2] || '').toLowerCase();
+      if (unit === 'rb' || unit === 'ribu' || unit === 'k') return base * 1000;
+      if (unit === 'juta' || unit === 'jt') return base * 1_000_000;
+      return base;
+    }
+
+    const qty = qtyMatch ? Number(qtyMatch[1].replace(',', '.')) : 1;
+    const unitPrice = priceMatch ? parseIndoNumber(priceMatch[1]) : NaN;
+
+    // Fallback amount if unit price not captured: any number with ribu
+    let amount = !isNaN(unitPrice) ? Math.round(unitPrice * (qty || 1)) : 0;
+    if (amount === 0) {
+      const anyAmount = lowerInput.match(/([\d.,]+)\s*(rb|ribu|k|juta|jt)/);
+      if (anyAmount) amount = Math.round(parseIndoNumber(anyAmount[0]) * (qty || 1));
+    }
+
+    // Extract description by removing time/price words
     let description = input
       .replace(/kemarin\s*/i, '')
-      .replace(/\d+\s*(rb|ribu|k|ratusan|puluhan)/gi, '')
-      .replace(/\d+\s*gelas/gi, '')
-      .replace(/\d+\s*biji/gi, '')
+      .replace(/harganya\s*[\d.,]+\s*(rb|ribu|k|juta|jt)?/gi, '')
+      .replace(/seharga\s*[\d.,]+\s*(rb|ribu|k|juta|jt)?/gi, '')
+      .replace(/\b\d+(?:[.,]\d+)?\b/gi, '')
+      .replace(/\s{2,}/g, ' ')
       .trim();
-    
+
     if (description && amount > 0) {
       return [{
         description,
         amount,
-        quantity: 1,
-        created_at: yesterday.toISOString(),
-        category: 'Makanan & Minuman',
+        quantity: qty || 1,
+        created_at: isoYesterday,
+        category: 'Lainnya',
         type: 'expense'
       }];
     }

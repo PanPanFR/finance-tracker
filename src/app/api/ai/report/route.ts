@@ -1,9 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
+async function validateUser(authHeader: string | null) {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  const token = authHeader.substring(7);
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+  if (error || !user) return null;
+  return { token, userId: user.id };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { question, userId } = await request.json();
+
+    // Validate auth via Supabase JWT so we can query with RLS
+    const authHeader = request.headers.get('authorization');
+    const auth = await validateUser(authHeader);
+    if (!auth) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
+    }
+    if (userId !== auth.userId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
 
     if (!question || !userId) {
       return NextResponse.json(
@@ -12,10 +34,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Initialize Supabase client
+    // Initialize Supabase client with JWT so RLS allows reading own rows
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { global: { headers: { Authorization: `Bearer ${auth.token}` } } as any }
     );
 
     // Fetch recent transactions for this user
@@ -43,7 +66,7 @@ export async function POST(request: NextRequest) {
     }));
 
     // If there is no AI key, return a simple computed summary as fallback
-    if (!process.env.OPENROUTER_KEY) {
+    if (!process.env.GOOGLE_API_KEY) {
       const totalIncome = transactions
         .filter(t => t.type === "income")
         .reduce((sum, t) => sum + (t.amount || 0), 0);
@@ -53,7 +76,7 @@ export async function POST(request: NextRequest) {
       const balance = totalIncome - totalExpense;
       return NextResponse.json({
         result: [
-          "AI tidak aktif (kunci OpenRouter belum diatur). Berikut ringkasan sederhana:",
+          "AI is disabled (GOOGLE_API_KEY not set). Simple summary:",
           `- Total pemasukan: Rp ${totalIncome.toLocaleString("id-ID")}`,
           `- Total pengeluaran: Rp ${totalExpense.toLocaleString("id-ID")}`,
           `- Saldo bersih: Rp ${balance.toLocaleString("id-ID")}`,
@@ -61,64 +84,48 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Ask OpenRouter to analyze transactions and answer
-    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.OPENROUTER_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "meta-llama/llama-3.3-8b-instruct:free",
-        messages: [
-          {
-            role: "system",
-            content:
-              `Kamu adalah asisten analis keuangan pribadi berbahasa Indonesia. Jawab langsung ke inti, singkat dan praktis. Gunakan poin-poin jika ada beberapa item. Hindari narasi panjang, langsung berikan informasi yang diminta.
+    // Ask Gemini to analyze transactions and answer
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(process.env.GOOGLE_API_KEY)}`;
+    const sys = `Kamu adalah asisten analis keuangan pribadi berbahasa Indonesia. Jawab ringkas, jelas, dan ramah dibaca tanpa bullet (*) atau markdown list. Gunakan baris baru, judul singkat, dan opsional tabel sederhana (tanpa karakter ASCII art).`;
+    const nowWIB = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+    const prompt = `${sys}\nTanggal/jam saat ini (WIB): ${nowWIB}\n\nData transaksi JSON (maks 200):\n${JSON.stringify(transactions)}\n\nPertanyaan pengguna: "${question}"\n\nFORMAT WAJIB (tanpa list/bullet):\nLaporan <rentang/tanggal> (<tanggal WIB>):\nTotal Pengeluaran: Rp xxx\nTotal Pemasukan: Rp xxx\nSaldo Bersih: Rp xxx\n\nPengeluaran per Kategori:\nKategori A: Rp xxx\nKategori B: Rp xxx\n\nCatatan (opsional jika perlu, maksimal 2 baris).\n\nJANGAN gunakan *, -, atau numbering. Hanya teks baris demi baris. Jika tidak ada data, tulis: Tidak ada data yang relevan.`;
 
-PENTING: Untuk perhitungan tanggal, gunakan tanggal saat ini: ${new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' })} (${new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' })})
-
-PERHITUNGAN TANGGAL YANG BENAR:
-- "hari ini" = ${new Date().toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' })}
-- "kemarin" = ${new Date(Date.now() - 24*60*60*1000).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' })}
-- "2 hari yang lalu" = ${new Date(Date.now() - 2*24*60*60*1000).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' })}
-- "3 hari yang lalu" = ${new Date(Date.now() - 3*24*60*60*1000).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' })}
-- "6 hari yang lalu" = ${new Date(Date.now() - 6*24*60*60*1000).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' })}
-- "7 hari yang lalu" = ${new Date(Date.now() - 7*24*60*60*1000).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' })}
-
-ATURAN PENTING:
-1. "X hari yang lalu" = X hari sebelum hari ini, BUKAN X hari terakhir
-2. Jika user minta "6 hari yang lalu", berarti tanggal ${new Date(Date.now() - 6*24*60*60*1000).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' })}, bukan range tanggal
-3. Jika tidak ada transaksi di tanggal yang diminta, jawab "Tidak ada transaksi pada tanggal [tanggal]"
-4. JANGAN memberikan data dari tanggal lain jika user minta tanggal spesifik
-5. JANGAN membuat range tanggal yang salah
-
-Selalu gunakan perhitungan tanggal yang benar berdasarkan tanggal saat ini.`,
-          },
-          {
-            role: "user",
-            content:
-              `Berikut data transaksi terbaru (maks 200 item) dalam JSON:\n` +
-              `${JSON.stringify(transactions)}\n\n` +
-              `Pertanyaan pengguna: "${question}"\n` +
-              `Gunakan data di atas untuk menjawab seakurat mungkin.`,
-          },
-        ],
-      }),
-    });
+    let res: Response;
+    try {
+      res = await fetch(geminiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [ { role: 'user', parts: [{ text: prompt }] } ],
+          generationConfig: { temperature: 0.2, maxOutputTokens: 512 }
+        })
+      });
+    } catch (e) {
+      console.error('AI Report - Gemini network error:', e);
+      return NextResponse.json(
+        { error: 'Gemini request failed (network)', details: e instanceof Error ? e.message : String(e) },
+        { status: 502 }
+      );
+    }
 
     if (!res.ok) {
       const text = await res.text();
-      console.error("AI Report - OpenRouter error:", res.status, text);
+      console.error('AI Report - Gemini error:', res.status, text);
       return NextResponse.json(
-        { error: 'Failed to get AI response' },
+        { error: 'Failed to get AI response', status: res.status, details: text },
         { status: res.status }
       );
     }
 
     const dataJson = await res.json();
-    const reply: string =
-      dataJson?.choices?.[0]?.message?.content?.trim() || "Tidak ada jawaban.";
+    let reply: string = dataJson?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "Tidak ada jawaban.";
+    // Sanitize: remove bullet markers and excessive bold markers
+    reply = reply
+      .split('\n')
+      .map((line: string) => line.replace(/^\s*[*\-•]+\s*/g, '').replace(/^\s*\d+\.?\s+/,'').replace(/\*\*(.*?)\*\*/g, '$1'))
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
     
     return NextResponse.json({ result: reply });
   } catch (error) {

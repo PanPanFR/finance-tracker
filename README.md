@@ -33,8 +33,8 @@ Check out the live application: **[Finance Tracker](https://finance-tracker-mu-f
 
 ### Prerequisites
 
-- Node.js 18+ 
-- npm or yarn
+- Node.js 18+
+- npm (or yarn/pnpm)
 - Supabase account
 
 ### Installation
@@ -50,13 +50,14 @@ cd finance-tracker
 npm install
 ```
 
-3. Set up environment variables:
-Create a `.env.local` file and add your credentials:
-```env
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-NEXT_PUBLIC_OPENROUTER_KEY=your_openrouter_api_key
+3. Configure environment variables:
+- Copy the example file to a local environment file:
+```bash
+cp env.example .env.local
 ```
+- Fill in values from your Supabase and OpenRouter projects.
+  - Set `GOOGLE_API_KEY` for Gemini (server-side secret; no NEXT_PUBLIC_ prefix).
+  - Ensure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` are correct.
 
 4. Run the development server:
 ```bash
@@ -65,16 +66,123 @@ npm run dev
 
 5. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## Authentication Setup
+## Authentication & Database (Supabase)
 
-This application uses Supabase for user authentication. Follow these steps to set up authentication:
+This project uses Supabase for Authentication and Database.
 
-1. **Enable Authentication in Supabase**: Go to your Supabase dashboard → Authentication → Settings
-2. **Configure Email Auth**: Enable email confirmations and set up your email templates
-3. **Set up RLS (Row Level Security)**: Enable RLS on your tables and create policies
-4. **Configure Redirect URLs**: Add your domain to the redirect URLs in Supabase
+Quick steps:
+1. Enable Authentication in Supabase (Email/Password).
+2. Add Redirect URLs for your local/production domains.
+3. Enable RLS on tables and create the required policies.
+4. Put credentials into `.env.local` following `env.example`.
 
-For detailed setup instructions, see [SETUP_AUTH.md](./SETUP_AUTH.md) and [SETUP_ENV.md](./SETUP_ENV.md).
+### Example Schema & RLS Policies (SQL)
+
+Run this in the Supabase SQL Editor to create basic tables and RLS policies.
+
+```sql
+-- Profiles: stores basic user info
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  full_name text,
+  avatar_url text,
+  updated_at timestamp with time zone default now()
+);
+
+alter table public.profiles enable row level security;
+
+-- Only the owner (auth.uid()) can view/manage their data
+create policy if not exists "Profiles are viewable by owner"
+on public.profiles for select
+using (auth.uid() = id);
+
+create policy if not exists "Profiles are updatable by owner"
+on public.profiles for update
+using (auth.uid() = id);
+
+create policy if not exists "Profiles are insertable by user"
+on public.profiles for insert
+with check (auth.uid() = id);
+
+-- Transactions: records user income/expenses
+create table if not exists public.transactions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  title text not null,
+  amount numeric(14,2) not null,
+  category text,
+  type text check (type in ('income','expense')) not null,
+  occurred_at date not null default current_date,
+  created_at timestamp with time zone default now()
+);
+
+alter table public.transactions enable row level security;
+
+create index if not exists transactions_user_id_idx on public.transactions(user_id);
+
+-- Owner-only access policies
+create policy if not exists "Read own transactions"
+on public.transactions for select
+using (auth.uid() = user_id);
+
+create policy if not exists "Insert own transactions"
+on public.transactions for insert
+with check (auth.uid() = user_id);
+
+create policy if not exists "Update own transactions"
+on public.transactions for update
+using (auth.uid() = user_id);
+
+create policy if not exists "Delete own transactions"
+on public.transactions for delete
+using (auth.uid() = user_id);
+```
+
+Tips:
+- Adjust the `category` column or add a `categories` table if needed.
+- Ensure Supabase JWT settings work with `auth.uid()` by default.
+
+### Transactions Table (matches your table builder UI)
+
+If you prefer `amount` as `int8` and `uuid_generate_v4()` for IDs (as shown in your UI), use this variant. It includes RLS and helpful indexes:
+
+```sql
+-- Enable uuid-ossp if you want uuid_generate_v4()
+create extension if not exists "uuid-ossp";
+
+create table if not exists public.transactions (
+  id uuid primary key default uuid_generate_v4(),
+  created_at timestamptz not null default now(),
+  description text,
+  amount int8 not null,
+  category text,
+  type text not null check (type in ('income','expense')),
+  user_id uuid not null references auth.users(id) on delete cascade
+);
+
+alter table public.transactions enable row level security;
+
+-- Owner-only policies
+create policy if not exists "Read own transactions"
+on public.transactions for select
+using (auth.uid() = user_id);
+
+create policy if not exists "Insert own transactions"
+on public.transactions for insert
+with check (auth.uid() = user_id);
+
+create policy if not exists "Update own transactions"
+on public.transactions for update
+using (auth.uid() = user_id);
+
+create policy if not exists "Delete own transactions"
+on public.transactions for delete
+using (auth.uid() = user_id);
+
+-- Indexes
+create index if not exists transactions_user_id_idx on public.transactions(user_id);
+create index if not exists transactions_created_at_idx on public.transactions(created_at);
+```
 
 ## Usage
 
@@ -86,7 +194,7 @@ For detailed setup instructions, see [SETUP_AUTH.md](./SETUP_AUTH.md) and [SETUP
 
 ## Deployment
 
-This project is configured for deployment on Vercel with automatic deployments on every push to the main branch.
+This project is configured for deployment on Vercel. Auto-deploy is enabled via GitHub integration on every push to the default branch. CI file: `.github/workflows/vercel-deploy.yml`.
 
 ### Auto-Deployment Setup
 
@@ -96,10 +204,9 @@ This project is configured for deployment on Vercel with automatic deployments o
    - Import your GitHub repository
    - Select the repository and branch (main/master)
 
-2. **Configure Build Settings**:
+2. **Configure Build Settings** (Vercel's Next.js defaults are usually correct):
    - Framework Preset: Next.js
    - Build Command: `npm run build`
-   - Output Directory: `.next`
    - Install Command: `npm install`
 
 3. **Set Environment Variables**:
@@ -125,10 +232,10 @@ vercel --prod
 
 ### Environment Variables for Production
 
-Make sure to set the following environment variables in your Vercel dashboard:
+Make sure the following variables exist in Vercel (Project Settings → Environment Variables):
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `NEXT_PUBLIC_OPENROUTER_KEY`
+- `GOOGLE_API_KEY` (no NEXT_PUBLIC_ prefix)
 
 ### Troubleshooting Auto-Deployment
 

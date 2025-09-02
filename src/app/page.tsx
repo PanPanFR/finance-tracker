@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState, type ChangeEvent } from "react";
 import { supabase } from "../lib/supabaseClient";
-import { parseTransaction } from "../lib/aiParser";
 import { scanReceipt } from "../lib/ocr";
 import { askReport } from "../lib/aiReport";
 import { useAuth } from "../contexts/AuthContext";
@@ -15,8 +14,6 @@ type Transaction = {
   description: string;
   amount: number;
   created_at: string;
-  quantity?: number;
-  unit_price?: number;
   category?: string;
   type: "income" | "expense";
   user_id?: string;
@@ -25,12 +22,13 @@ type Transaction = {
 export default function Home() {
   const { user, loading: authLoading } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [input, setInput] = useState("");
-  const [loadingAdd, setLoadingAdd] = useState(false);
+  
   const [ocrProgress, setOcrProgress] = useState<string>("");
   const [question, setQuestion] = useState("");
   const [answer, setAnswer] = useState("");
   const [loadingReport, setLoadingReport] = useState(false);
+  const [input, setInput] = useState("");
+  const [loadingAdd, setLoadingAdd] = useState(false);
   const [editTransaction, setEditTransaction] = useState<Transaction | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -52,10 +50,20 @@ export default function Home() {
   // Get unique categories for filter buttons
   const uniqueCategories = ["All", ...Array.from(new Set(transactions.map(t => t.category).filter(Boolean)))].filter((cat): cat is string => cat !== undefined);
 
-  // Calculate today's spending
-  const today = new Date().toISOString().split('T')[0];
+  // Calculate today's spending (timezone-safe for Asia/Jakarta)
+  // Format both "now" and the transaction date in Asia/Jakarta to compare YYYY-MM-DD
+  const formatYmdJakarta = (date: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(date);
+
+  const todayJakarta = formatYmdJakarta(new Date());
+  const isTodayInJakarta = (isoString?: string) => {
+    if (!isoString) return false;
+    const parsed = new Date(isoString);
+    if (isNaN(parsed.getTime())) return false;
+    return formatYmdJakarta(parsed) === todayJakarta;
+  };
+
   const todaySpending = transactions
-    .filter(t => t.type === 'expense' && t.created_at.startsWith(today))
+    .filter(t => t.type === 'expense' && isTodayInJakarta(t.created_at))
     .reduce((sum, t) => sum + (t.amount || 0), 0);
 
   const fetchTransactions = async () => {
@@ -79,84 +87,7 @@ export default function Home() {
     setIsLoading(false);
   };
 
-  const addTransactionFromText = async (text: string) => {
-    if (!user) return;
-    
-    setLoadingAdd(true);
-    try {
-      console.log("Starting AI parsing for:", text);
-      
-      const parsedItems = await parseTransaction(text);
-      console.log("AI parsing result:", parsedItems);
-      
-      if (!parsedItems || parsedItems.length === 0) {
-        alert("Gagal parsing transaksi. Coba perjelas teksnya, misal: 'beli bakso 20000'.");
-        return;
-      }
-
-      const transactionsToInsert = parsedItems.map(item => {
-        const { description, amount, quantity, category, type, created_at } = item;
-        const unitPrice = (quantity && amount && quantity > 0) ? amount / quantity : undefined;
-        
-        // Use AI parsed date if available, otherwise use current time
-        const transactionDate = created_at || new Date().toISOString();
-        
-        const transactionData = {
-          description: description || "",
-          amount,
-          quantity,
-          unit_price: unitPrice,
-          category: category || "Lainnya",
-          type: type || "expense",
-          created_at: transactionDate,
-          user_id: user.id,
-        };
-        return transactionData;
-      });
-
-      // Optimistic UI
-      const optimisticItems: Transaction[] = transactionsToInsert.map((t) => ({
-        id: `temp-${Math.random().toString(36).slice(2)}`,
-        description: t.description,
-        amount: t.amount,
-        created_at: t.created_at,
-        quantity: t.quantity,
-        unit_price: t.unit_price,
-        category: t.category,
-        type: t.type,
-        user_id: user.id,
-      }));
-      setOptimistic(prev => [...optimisticItems, ...prev]);
-
-      if (!supabase) {
-        console.error("Supabase client not initialized");
-        return;
-      }
-      
-      console.log("Inserting transactions to database:", transactionsToInsert);
-      
-      const { error } = await supabase.from("transactions").insert(transactionsToInsert);
-
-      if (error) {
-        console.error("Database insert error:", error);
-        alert("Gagal menyimpan ke database: " + error.message);
-        setOptimistic(prev => prev.filter(x => !x.id.startsWith("temp-")));
-        return;
-      }
-      
-      console.log("Successfully inserted transactions to database");
-
-      await fetchTransactions();
-    } finally {
-      setLoadingAdd(false);
-    }
-  };
-
-  const handleManualAdd = async () => {
-    if (!input.trim()) return;
-    await addTransactionFromText(input.trim());
-    setInput("");
-  };
+  
 
   const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -165,8 +96,26 @@ export default function Home() {
     setOcrProgress("Memindai struk…");
     try {
       const text = await scanReceipt(file);
-      setOcrProgress("Struk terbaca. Memproses dengan AI…");
-      await addTransactionFromText(text);
+      setOcrProgress("Struk terbaca. Mengirim ke AI…");
+      // Call server to parse AND insert into DB
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error("Tidak ada sesi. Silakan login kembali.");
+      }
+      const res = await fetch("/api/ai/parse", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ input: text, insert: true, ocrNow: true })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error || `Gagal parse/insert (status ${res.status})`);
+      }
+      setOcrProgress("Selesai ✅");
+      await fetchTransactions();
       setOcrProgress("Selesai ✅");
     } catch (err) {
       console.error(err);
@@ -239,7 +188,6 @@ export default function Home() {
       amount: transactionData.amount,
       category: transactionData.category || "Lainnya",
       type: transactionData.type || "expense",
-      quantity: transactionData.quantity,
     }).eq("id", editTransaction.id);
     
     if (error) {
@@ -342,7 +290,10 @@ export default function Home() {
               </div>
               <div className="income-box blue-box-item">
                 <div className="income-label">Pendapatan Hari Ini</div>
-                <div className="income-amount">Rp {transactions.filter(t => t.type === 'income' && t.created_at.startsWith(today)).reduce((sum, t) => sum + (t.amount || 0), 0).toLocaleString('id-ID')}</div>
+                <div className="income-amount">Rp {transactions
+                  .filter(t => t.type === 'income' && isTodayInJakarta(t.created_at))
+                  .reduce((sum, t) => sum + (t.amount || 0), 0)
+                  .toLocaleString('id-ID')}</div>
               </div>
             </div>
           </div>
@@ -383,10 +334,15 @@ export default function Home() {
                         <div className="transaction-info-compact">
                           <div className="transaction-name-compact">{t.description}</div>
                           <div className="transaction-category-compact">
-                            {t.category || 'Lainnya'} • {new Date(t.created_at).toLocaleDateString('id-ID', {
-                              day: 'numeric',
-                              month: 'short'
-                            })}
+                            {t.category || 'Lainnya'} • {(() => {
+                              try {
+                                const d = new Date(t.created_at);
+                                if (isNaN(d.getTime())) return "";
+                                const fmt = new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short' });
+                                // Normalize month to Indonesian short names consistent with UI
+                                return fmt.format(d).replace('.', '');
+                              } catch { return ""; }
+                            })()}
                           </div>
                       </div>
                         <div className={`transaction-amount-compact ${t.type === 'income' ? 'income' : 'expense'}`}>
@@ -419,10 +375,63 @@ export default function Home() {
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="e.g., makan bakso 20rb, beli bensin 50rb"
                   className="ai-text-input"
-                  onKeyPress={(e) => e.key === 'Enter' && handleManualAdd()}
+                  onKeyPress={async (e) => {
+                    if (e.key === 'Enter' && input.trim()) {
+                      setLoadingAdd(true);
+                      try {
+                        const { data: { session } } = await supabase.auth.getSession();
+                        if (!session?.access_token) throw new Error("Tidak ada sesi. Silakan login kembali.");
+                        const res = await fetch('/api/ai/parse', {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${session.access_token}`
+                          },
+                          body: JSON.stringify({ input: input.trim(), insert: true })
+                        });
+                        if (!res.ok) {
+                          const err = await res.json().catch(() => ({}));
+                          throw new Error(err?.error || `Gagal memproses (status ${res.status})`);
+                        }
+                        setInput("");
+                        await fetchTransactions();
+                      } catch (err) {
+                        console.error(err);
+                        alert(err instanceof Error ? err.message : 'Gagal memproses input.');
+                      } finally {
+                        setLoadingAdd(false);
+                      }
+                    }
+                  }}
                 />
                 <button
-                  onClick={handleManualAdd}
+                  onClick={async () => {
+                    if (!input.trim()) return;
+                    setLoadingAdd(true);
+                    try {
+                      const { data: { session } } = await supabase.auth.getSession();
+                      if (!session?.access_token) throw new Error("Tidak ada sesi. Silakan login kembali.");
+                      const res = await fetch('/api/ai/parse', {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json',
+                          'Authorization': `Bearer ${session.access_token}`
+                        },
+                        body: JSON.stringify({ input: input.trim(), insert: true })
+                      });
+                      if (!res.ok) {
+                        const err = await res.json().catch(() => ({}));
+                        throw new Error(err?.error || `Gagal memproses (status ${res.status})`);
+                      }
+                      setInput("");
+                      await fetchTransactions();
+                    } catch (err) {
+                      console.error(err);
+                      alert(err instanceof Error ? err.message : 'Gagal memproses input.');
+                    } finally {
+                      setLoadingAdd(false);
+                    }
+                  }}
                   disabled={loadingAdd}
                   className="ai-send-button"
                 >

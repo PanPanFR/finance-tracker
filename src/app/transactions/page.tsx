@@ -13,7 +13,6 @@ type Transaction = {
   created_at: string;
   category?: string;
   type: "income" | "expense";
-  quantity?: number;
 };
 
 const CATEGORY_OPTIONS = [
@@ -53,6 +52,26 @@ export default function TransactionsPage() {
     setIsLoading(false);
   };
 
+  // Render date/time with Asia/Jakarta timezone to avoid month/day swap
+  const formatDateLiteral = (iso: string) => {
+    try {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return "";
+      return new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short', year: 'numeric' })
+        .format(d)
+        .replace(/\./g, ''); // normalize month abbreviations
+    } catch { return ""; }
+  };
+
+  const formatTimeLiteral = (iso: string) => {
+    try {
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return "";
+      return new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false })
+        .format(d);
+    } catch { return ""; }
+  };
+
   // Filtered transactions
   const filtered = selectedCategory === "All"
     ? transactions
@@ -80,13 +99,26 @@ export default function TransactionsPage() {
       amount: transactionData.amount,
       category: transactionData.category || "Lainnya",
       type: transactionData.type || "expense",
-      quantity: transactionData.quantity,
     }).eq("id", editTransaction.id);
     if (error) {
       alert("Gagal update transaksi: " + error.message);
       return;
     }
     closeEditModal();
+    await fetchTransactions();
+  };
+
+  // Delete handler
+  const handleDelete = async (id: string) => {
+    if (!confirm("Yakin ingin menghapus transaksi ini?")) return;
+    // Optimistic remove
+    setTransactions(prev => prev.filter(t => t.id !== id));
+    const { error } = await supabase.from("transactions").delete().eq("id", id);
+    if (error) {
+      alert("Gagal menghapus transaksi di database: " + error.message);
+      await fetchTransactions();
+      return;
+    }
     await fetchTransactions();
   };
 
@@ -133,19 +165,11 @@ export default function TransactionsPage() {
                 <div>
                   <div className="transaction-card-title">{t.description}</div>
                   <div className="transaction-card-date">
-                    {new Date(t.created_at).toLocaleDateString("id-ID", {
-                      day: "numeric",
-                      month: "short",
-                      year: "numeric"
-                    })} • {new Date(t.created_at).toLocaleTimeString("id-ID", {
-                      hour: "2-digit",
-                      minute: "2-digit"
-                    })}
+                    {formatDateLiteral(t.created_at)} • {formatTimeLiteral(t.created_at)}
                   </div>
                   <div className="transaction-card-badges">
                     {t.category && <span className="badge badge-category">{t.category}</span>}
                     <span className={`badge badge-${t.type}`}>{t.type === "income" ? "Income" : "Expense"}</span>
-                    {t.quantity && <span className="badge badge-qty">x{t.quantity}</span>}
                   </div>
                 </div>
                 <div className="transaction-card-amount {t.type}">
@@ -156,7 +180,7 @@ export default function TransactionsPage() {
               </div>
               <div className="transaction-card-actions">
                 <button className="btn-edit" onClick={() => openEditModal(t)}>Edit</button>
-                <button className="btn-delete">Delete</button>
+                <button className="btn-delete" onClick={() => handleDelete(t.id)}>Delete</button>
               </div>
             </div>
           ))}
