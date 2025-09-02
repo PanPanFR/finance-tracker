@@ -14,7 +14,7 @@ export default function UserProfile({ user, onLogout }: UserProfileProps) {
 
   const handleLogout = async () => {
     try {
-      const { error } = await supabase.auth.signOut();
+      const { error } = await supabase.auth.signOut({ scope: 'global' });
       if (error) throw error;
       onLogout();
     } catch (error) {

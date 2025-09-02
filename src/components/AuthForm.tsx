@@ -72,7 +72,10 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${getCurrentSiteUrl()}/auth/callback`
+          redirectTo: `${getCurrentSiteUrl()}/auth/callback`,
+          queryParams: {
+            prompt: 'select_account',
+          },
         }
       });
       if (error) throw error;
