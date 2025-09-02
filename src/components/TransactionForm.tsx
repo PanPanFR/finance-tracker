@@ -119,21 +119,7 @@ export default function TransactionForm({
               />
             </div>
 
-            <div className="form-group flex-1">
-              <label htmlFor="quantity" className="form-label">
-                Quantity <span className="text-gray-500 text-sm">(optional)</span>
-              </label>
-              <input
-                type="number"
-                id="quantity"
-                value={formData.quantity}
-                onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
-                className="form-input"
-                placeholder="1"
-                min="0"
-                step="0.1"
-              />
-            </div>
+            
           </div>
 
           <div className="form-row">

@@ -163,7 +163,7 @@ export async function POST(request: NextRequest) {
 
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(process.env.GOOGLE_API_KEY)}`;
 
-    const prompt = `You are a transaction parser API. Reply ONLY with a raw JSON array, no extra text.\nFormat: [{ description: string, amount: number (TOTAL price), quantity?: number, created_at?: string (ISO 8601), category?: string, type?: \"income\" | \"expense\" }]\n- description: product/merchant/activity name, e.g. \"KRL\", \"Starbucks\", \"Shopee\", \"Electricity PLN\". Do not put categories here.\n- category: one of 'Makanan & Minuman', 'Transportasi', 'Tagihan', 'Hiburan', 'Belanja', 'Kesehatan', 'Pendidikan', 'Lainnya'.\n- type: 'income' for salary/bonus/refund/incoming transfers/selling; otherwise 'expense'.\n- amount MUST be the total price, NOT unit price.\n- If time words appear (e.g. 'kemarin', '2 hari lalu', 'tadi pagi jam 7'), convert to ISO 8601 using Asia/Jakarta timezone.\n  - pagi: 05:00-10:00, siang: 11:00-14:00, sore: 15:00-18:00, malam: 19:00-23:00\n- If multiple items (e.g. 'A dan B'), output multiple objects in the array.\n- If unsure, use category 'Lainnya' and type 'expense'.\nCurrent time (WIB): ${new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' })}\nUser input: ${sanitizedInput}`;
+    const prompt = `You are a transaction parser API. Reply ONLY with a raw JSON array, no extra text.\nFormat: [{ description: string, amount: number (TOTAL price), created_at?: string (ISO 8601), category?: string, type?: \"income\" | \"expense\" }]\n- description: product/merchant/activity name, e.g. \"KRL\", \"Starbucks\", \"Shopee\", \"Electricity PLN\". Do not put categories here.\n- category: one of 'Makanan & Minuman', 'Transportasi', 'Tagihan', 'Hiburan', 'Belanja', 'Kesehatan', 'Pendidikan', 'Lainnya'.\n- type: 'income' for salary/bonus/refund/incoming transfers/selling; otherwise 'expense'.\n- amount MUST be the total price, NOT unit price.\n- If time words appear (e.g. 'kemarin', '2 hari lalu', 'tadi pagi jam 7'), convert to ISO 8601 using Asia/Jakarta timezone.\n  - pagi: 05:00-10:00, siang: 11:00-14:00, sore: 15:00-18:00, malam: 19:00-23:00\n- If multiple items (e.g. 'A dan B'), output multiple objects in the array.\n- If unsure, use category 'Lainnya' and type 'expense'.\nCurrent time (WIB): ${new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' })}\nUser input: ${sanitizedInput}`;
 
     const res = await fetch(geminiUrl, {
       method: 'POST',
@@ -468,20 +468,7 @@ export async function POST(request: NextRequest) {
             num: Number(m[1].replace(/\./g, '').replace(',', '.')),
             unit: (m[2] || '').toLowerCase()
           }));
-        // Heuristic: pattern "qty total" → first small int (<=100) without currency, followed by price (with unit or >=1000)
-        if (tokens.length >= 2) {
-          const first = tokens[0];
-          const second = tokens[1];
-          const firstLooksQty = Number.isFinite(first.num) && first.num > 0 && first.num <= 100 && !first.unit;
-          const secondLooksAmount = Number.isFinite(second.num) && (!!second.unit || second.num >= 1000);
-          if (firstLooksQty && secondLooksAmount) {
-            const total = parseIndoNumber(`${second.num}${second.unit ? ' ' + second.unit : ''}`);
-            if (total) {
-              result.quantity = first.num;
-              result.amount = Math.round(total);
-            }
-          }
-        }
+        // Removed quantity logic; always treat numeric as total amount only
         // If only a single numeric token exists, treat it as the total amount (no qty)
         if ((!result.amount || !isFinite(result.amount)) && tokens.length === 1) {
           const t0 = tokens[0];
@@ -491,17 +478,7 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Fallback: qty x unit price pattern ONLY if there are at least two numeric tokens
-        if ((!result.quantity || !result.amount) && tokens.length >= 2) {
-          const qtyLocalMatch = segment.match(/\b(\d+(?:[.,]\d+)?)\b(?!\s*(ribu|rb|k|juta|jt))/);
-          const priceLocalMatch = segment.match(/([\d.,]+\s*(?:ribu|rb|k|juta|jt)?)(?!.*[\d])/);
-          const qtyLocal = qtyLocalMatch ? Number(qtyLocalMatch[1].replace(',', '.')) : null;
-          const unitPriceLocal = priceLocalMatch ? parseIndoNumber(priceLocalMatch[1]) : null;
-          if (qtyLocal && unitPriceLocal) {
-            result.quantity = qtyLocal;
-            result.amount = Math.round(qtyLocal * unitPriceLocal);
-          }
-        }
+        // No qty×price inference anymore
         // Normalize amount if it's string or malformed
         if (typeof result.amount !== 'number' || !isFinite(result.amount)) {
           const normalized = normalizeAmount(result.amount);

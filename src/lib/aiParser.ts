@@ -4,7 +4,7 @@ import { supabase } from "./supabaseClient";
 const TransactionSchema = z.object({
   description: z.string(),
   amount: z.number(),
-  quantity: z.number().optional(),
+  
   created_at: z.string().optional(),
   category: z.string().optional(), // Tambah category
   type: z.enum(["income", "expense"]).optional(),
@@ -67,7 +67,6 @@ function manualParseFallback(input: string): ParsedTransaction[] | null {
       return [{
         description,
         amount,
-        quantity: qty || 1,
         created_at: isoYesterday,
         category: 'Lainnya',
         type: 'expense'
