@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
     // 1. CORS Protection
     const origin = request.headers.get('origin');
     const allowedOrigins = [
-      'https://finance-tracker-mu-five-89.vercel.app',
+      'https://panpan-finance-tracker.vercel.app',
       'http://localhost:3000',
       'https://localhost:3000'
     ];

@@ -4,7 +4,7 @@ A modern web application for tracking personal finances built with Next.js, Reac
 
 ## 🌐 Live Demo
 
-Check out the live application: **[Finance Tracker](https://finance-tracker-mu-five-89.vercel.app/)**
+Check out the live application: **[Finance Tracker](https://panpan-finance-tracker.vercel.app/)**
 
 ## Features
 
