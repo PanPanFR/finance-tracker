@@ -1,65 +1,46 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, Session } from '@supabase/supabase-js';
-import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
+import React, { createContext, useContext, useState, useEffect } from "react";
 
 interface AuthContextType {
-  user: User | null;
-  session: Session | null;
+  isAuthenticated: boolean;
   loading: boolean;
-  signOut: () => Promise<void>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!isSupabaseConfigured()) {
-      console.warn('Supabase not configured');
-      setLoading(false);
-      return;
-    }
-
-    // Get initial session
-    const getInitialSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    };
-
-    getInitialSession();
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
+    // Check if session cookie exists by calling a lightweight auth check endpoint
+    const checkAuth = async () => {
+      try {
+        const res = await fetch("/api/auth/check", { method: "GET" });
+        setIsAuthenticated(res.ok);
+      } catch {
+        setIsAuthenticated(false);
+      } finally {
         setLoading(false);
       }
-    );
-
-    return () => subscription.unsubscribe();
+    };
+    checkAuth();
   }, []);
 
-  const signOut = async () => {
-    await supabase.auth.signOut({ scope: 'global' });
-  };
-
-  const value = {
-    user,
-    session,
-    loading,
-    signOut,
+  const logout = async () => {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      setIsAuthenticated(false);
+      window.location.reload();
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
   };
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={{ isAuthenticated, loading, logout }}>
       {children}
     </AuthContext.Provider>
   );
@@ -68,7 +49,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 }

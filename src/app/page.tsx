@@ -1,13 +1,27 @@
 "use client";
 
-import React, { useEffect, useState, type ChangeEvent } from "react";
-import { supabase } from "../lib/supabaseClient";
-import { scanReceipt } from "../lib/ocr";
-import { askReport } from "../lib/aiReport";
+import React, { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
+import Navigation from "../components/Navigation";
 import { useAuth } from "../contexts/AuthContext";
-import AuthForm from "../components/AuthForm";
-import UserProfile from "../components/UserProfile";
+import PasswordGate from "../components/PasswordGate";
 import TransactionForm from "../components/TransactionForm";
+import ConfirmModal from "../components/ConfirmModal";
+import { useToast } from "../components/Toast";
+import {
+  WalletIcon,
+  TrendingDownIcon,
+  TrendingUpIcon,
+  SparklesIcon,
+  PlusIcon,
+  SearchIcon,
+  EditIcon,
+  TrashIcon,
+  UploadCloudIcon,
+  ArrowUpRightIcon,
+  CategoryIcon,
+  ReceiptIcon,
+} from "../components/Icons";
 
 type Transaction = {
   id: string;
@@ -16,43 +30,50 @@ type Transaction = {
   created_at: string;
   category?: string;
   type: "income" | "expense";
-  user_id?: string;
 };
 
 export default function Home() {
-  const { user, loading: authLoading } = useAuth();
+  const { isAuthenticated, loading: authLoading } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  
-  const [ocrProgress, setOcrProgress] = useState<string>("");
-  const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState("");
-  const [loadingReport, setLoadingReport] = useState(false);
-  const [input, setInput] = useState("");
-  const [loadingAdd, setLoadingAdd] = useState(false);
-  const [editTransaction, setEditTransaction] = useState<Transaction | null>(null);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [optimistic, setOptimistic] = useState<Transaction[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState("All");
   const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedType, setSelectedType] = useState<"all" | "expense" | "income">("all");
+
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [editTransaction, setEditTransaction] = useState<Transaction | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+
+  const { success, error: toastError } = useToast();
+
+  const fetchTransactions = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const res = await fetch("/api/transactions", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch");
+      const data = await res.json();
+      setTransactions((data.data || []) as Transaction[]);
+    } catch (error) {
+      console.error("Failed to fetch transactions:", error);
+      toastError("Failed to sync latest transactions");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [toastError]);
 
   useEffect(() => {
-    if (user) {
+    if (isAuthenticated) {
       fetchTransactions();
     }
-  }, [user]);
+  }, [isAuthenticated, fetchTransactions]);
 
-  // Filter transactions by category
-  const filteredTransactions = selectedCategory === "All" 
-    ? transactions 
-    : transactions.filter(t => t.category === selectedCategory);
+  useEffect(() => {
+    const handleRefresh = () => fetchTransactions();
+    window.addEventListener("transaction-added", handleRefresh);
+    return () => window.removeEventListener("transaction-added", handleRefresh);
+  }, [fetchTransactions]);
 
-  // Get unique categories for filter buttons
-  const uniqueCategories = ["All", ...Array.from(new Set(transactions.map(t => t.category).filter(Boolean)))].filter((cat): cat is string => cat !== undefined);
-
-  // Calculate today's spending (timezone-safe for Asia/Jakarta)
-  // Format both "now" and the transaction date in Asia/Jakarta to compare YYYY-MM-DD
-  const formatYmdJakarta = (date: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jakarta' }).format(date);
+  const formatYmdJakarta = (date: Date) =>
+    new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(date);
 
   const todayJakarta = formatYmdJakarta(new Date());
   const isTodayInJakarta = (isoString?: string) => {
@@ -62,456 +83,435 @@ export default function Home() {
     return formatYmdJakarta(parsed) === todayJakarta;
   };
 
-  const todaySpending = transactions
-    .filter(t => t.type === 'expense' && isTodayInJakarta(t.created_at))
+  const isCurrentMonthInJakarta = (isoString?: string) => {
+    if (!isoString) return false;
+    const parsed = new Date(isoString);
+    if (isNaN(parsed.getTime())) return false;
+    const currentYm = todayJakarta.substring(0, 7);
+    return formatYmdJakarta(parsed).substring(0, 7) === currentYm;
+  };
+
+  const todayExpense = transactions
+    .filter((t) => t.type === "expense" && isTodayInJakarta(t.created_at))
     .reduce((sum, t) => sum + (t.amount || 0), 0);
 
-  const fetchTransactions = async () => {
-    if (!user) {
-      console.error("User not authenticated");
-      return;
-    }
-    setIsLoading(true);
-    const { data, error } = await supabase
-      .from("transactions")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
+  const todayIncome = transactions
+    .filter((t) => t.type === "income" && isTodayInJakarta(t.created_at))
+    .reduce((sum, t) => sum + (t.amount || 0), 0);
 
-    if (error) {
-      console.error(error);
-      return;
-    }
-    setTransactions((data || []) as Transaction[]);
-    setOptimistic([]);
-    setIsLoading(false);
-  };
+  const monthlyExpense = transactions
+    .filter((t) => t.type === "expense" && isCurrentMonthInJakarta(t.created_at))
+    .reduce((sum, t) => sum + (t.amount || 0), 0);
 
-  
+  const monthlyIncome = transactions
+    .filter((t) => t.type === "income" && isCurrentMonthInJakarta(t.created_at))
+    .reduce((sum, t) => sum + (t.amount || 0), 0);
 
-  const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const totalBalance = transactions.reduce((acc, t) => {
+    return t.type === "income" ? acc + t.amount : acc - t.amount;
+  }, 0);
 
-    setOcrProgress("Memindai struk…");
-    try {
-      const text = await scanReceipt(file);
-      setOcrProgress("Struk terbaca. Mengirim ke AI…");
-      // Call server to parse AND insert into DB
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        throw new Error("Tidak ada sesi. Silakan login kembali.");
-      }
-      const res = await fetch("/api/ai/parse", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${session.access_token}`
-        },
-        body: JSON.stringify({ input: text, insert: true, ocrNow: true })
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error || `Gagal parse/insert (status ${res.status})`);
-      }
-      setOcrProgress("Selesai ✅");
-      await fetchTransactions();
-      setOcrProgress("Selesai ✅");
-    } catch (err) {
-      console.error(err);
-      setOcrProgress("Gagal memindai.");
-      alert("Gagal memindai struk. Coba foto yang lebih jelas/terang.");
-    } finally {
-      e.target.value = "";
-      setTimeout(() => setOcrProgress(""), 1200);
-    }
-  };
-
-  const handleAskReport = async () => {
-    if (!question.trim()) return;
-    if (!user) {
-      alert("Silakan login terlebih dahulu.");
-      return;
-    }
-    setLoadingReport(true);
-    try {
-      const reply = await askReport(question.trim(), user.id);
-      setAnswer(reply);
-    } catch (err) {
-      console.error(err);
-      alert("Gagal menghasilkan laporan.");
-    } finally {
-      setLoadingReport(false);
-    }
-  };
-
-  // Handler hapus transaksi
-  const handleDelete = async (id: string) => {
-    if (!confirm("Yakin ingin menghapus transaksi ini?")) return;
-    if (!supabase) {
-      console.error("Supabase client not initialized");
-      return;
-    }
-    setTransactions(prev => prev.filter(t => t.id !== id));
-    setOptimistic(prev => prev.filter(t => t.id !== id));
-    const { error } = await supabase.from("transactions").delete().eq("id", id);
-    if (error) {
-      alert("Gagal menghapus transaksi di database: " + error.message);
-      await fetchTransactions();
-      return;
-    }
-    await fetchTransactions();
-  };
-
-  // Handler buka edit modal
-  const openEditModal = (t: Transaction) => {
-    setEditTransaction(t);
-    setIsEditModalOpen(true);
-  };
-
-  // Handler tutup edit modal
-  const closeEditModal = () => {
-    setEditTransaction(null);
-    setIsEditModalOpen(false);
-  };
-
-  // Handler simpan edit
-  const handleEditSave = async (transactionData: Omit<Transaction, 'id' | 'created_at'>) => {
-    if (!editTransaction) return;
-    if (!supabase) {
-      console.error("Supabase client not initialized");
-      return;
-    }
-    
-    const { error } = await supabase.from("transactions").update({
-      description: transactionData.description,
-      amount: transactionData.amount,
-      category: transactionData.category || "Lainnya",
-      type: transactionData.type || "expense",
-    }).eq("id", editTransaction.id);
-    
-    if (error) {
-      alert("Gagal update transaksi: " + error.message);
-      return;
-    }
-    
-    closeEditModal();
-    await fetchTransactions();
-  };
-
-  // Handler buka add modal
-  const openAddModal = () => {
-    setIsAddModalOpen(true);
-  };
-
-  // Handler tutup add modal
-  const closeAddModal = () => {
-    setIsAddModalOpen(false);
-  };
-
-  // Handler tambah transaksi
-  const handleAddTransaction = async (transactionData: Omit<Transaction, 'id' | 'created_at'>) => {
-    if (!user) return;
-    
-    const { error } = await supabase.from("transactions").insert({
-      ...transactionData,
-      user_id: user.id,
-      created_at: new Date().toISOString(),
+  const categorySpendingMap: Record<string, number> = {};
+  transactions
+    .filter((t) => t.type === "expense" && isCurrentMonthInJakarta(t.created_at))
+    .forEach((t) => {
+      const cat = t.category || "Other";
+      categorySpendingMap[cat] = (categorySpendingMap[cat] || 0) + t.amount;
     });
-    
-    if (error) {
-      alert("Gagal menambah transaksi: " + error.message);
-      return;
+
+  const topCategory = Object.entries(categorySpendingMap).sort((a, b) => b[1] - a[1])[0];
+
+  const handleAddTransaction = async (transactionData: Omit<Transaction, "id" | "created_at">) => {
+    try {
+      const res = await fetch("/api/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...transactionData,
+          created_at: new Date().toISOString(),
+        }),
+        credentials: "include",
+      });
+
+      if (!res.ok) throw new Error("Insert failed");
+      success("Transaction recorded!");
+      setIsAddModalOpen(false);
+      await fetchTransactions();
+    } catch {
+      toastError("Failed to add transaction");
     }
-    
-    closeAddModal();
-    await fetchTransactions();
   };
 
-  const CATEGORY_OPTIONS = [
-    "Makanan & Minuman",
-    "Transportasi",
-    "Tagihan",
-    "Hiburan",
-    "Belanja",
-    "Kesehatan",
-    "Pendidikan",
-    "Lainnya",
-  ];
+  const handleEditSave = async (transactionData: Omit<Transaction, "id" | "created_at">) => {
+    if (!editTransaction) return;
 
-  const TYPE_OPTIONS = [
-    { label: "Pemasukan", value: "income" },
-    { label: "Pengeluaran", value: "expense" },
-  ];
+    try {
+      const res = await fetch(`/api/transactions/${editTransaction.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description: transactionData.description,
+          amount: transactionData.amount,
+          category: transactionData.category || "Other",
+          type: transactionData.type || "expense",
+        }),
+        credentials: "include",
+      });
 
-  // Show loading while checking authentication
+      if (!res.ok) throw new Error("Update failed");
+      success("Transaction updated!");
+      setEditTransaction(null);
+      await fetchTransactions();
+    } catch {
+      toastError("Failed to update transaction");
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTargetId) return;
+    const id = deleteTargetId;
+    setDeleteTargetId(null);
+    setTransactions((prev) => prev.filter((t) => t.id !== id));
+
+    try {
+      const res = await fetch(`/api/transactions/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Delete failed");
+      success("Transaction deleted");
+    } catch {
+      toastError("Failed to delete transaction");
+      await fetchTransactions();
+    }
+  };
+
+  const filteredTransactions = transactions.filter((t) => {
+    const matchSearch =
+      searchQuery === "" ||
+      t.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (t.category && t.category.toLowerCase().includes(searchQuery.toLowerCase()));
+
+    const matchType =
+      selectedType === "all" ||
+      (selectedType === "expense" && t.type === "expense") ||
+      (selectedType === "income" && t.type === "income");
+
+    return matchSearch && matchType;
+  });
+
   if (authLoading) {
     return (
-      <div className="app-loading-container">
-        <div className="app-loading-content">
-          <div className="app-loading-logo">
-            <div className="logo-icon">💰</div>
-            <h1 className="logo-title">Finance Tracker</h1>
-          </div>
-          
-          <div className="app-loading-animation">
-            <div className="loading-dots">
-              <div className="dot"></div>
-              <div className="dot"></div>
-              <div className="dot"></div>
-            </div>
-          </div>
-          
-          <p className="app-loading-text">Memuat aplikasi...</p>
-        </div>
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-app)", color: "var(--text-muted)", fontSize: "0.875rem" }}>
+        Loading session...
       </div>
     );
   }
 
-  // Show login form if not authenticated
-  if (!user) {
-    return <AuthForm onAuthSuccess={() => {}} />;
+  if (!isAuthenticated) {
+    return <PasswordGate onSuccess={() => {}} />;
   }
 
   return (
-    <div className="dashboard-container">
-      <div className="dashboard-header-row">
-        <h1 className="dashboard-title">AI Finance Tracker</h1>
-        <UserProfile user={user} onLogout={() => {}} />
-      </div>
-      <div className="dashboard-grid">
-        {/* Left: Summary & Transactions */}
-        <section className="dashboard-main-left">
-          <div className="spending-income-blue-box">
-            <div className="spending-income-inner">
-              <div className="spending-box blue-box-item">
-                <div className="spending-label">Pengeluaran Hari Ini</div>
-                <div className="spending-amount">Rp {todaySpending.toLocaleString('id-ID')}</div>
+    <div className="page-wrapper">
+      <Navigation />
+
+      <main className="app-container">
+        {/* HERO METRICS BENTO GRID */}
+        <section className="hero-grid">
+          {/* Net Balance Card */}
+          <div className="hero-card-main">
+            <div>
+              <div className="card-eyebrow">
+                <span style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                  <WalletIcon size={14} color="#818cf8" />
+                  <span>Estimated Net Balance</span>
+                </span>
+                <span style={{ fontSize: "0.6875rem", fontWeight: 700, color: totalBalance >= 0 ? "var(--color-income)" : "var(--color-expense)" }}>
+                  {totalBalance >= 0 ? "Positive Flow" : "Deficit"}
+                </span>
               </div>
-              <div className="income-box blue-box-item">
-                <div className="income-label">Pendapatan Hari Ini</div>
-                <div className="income-amount">Rp {transactions
-                  .filter(t => t.type === 'income' && isTodayInJakarta(t.created_at))
-                  .reduce((sum, t) => sum + (t.amount || 0), 0)
-                  .toLocaleString('id-ID')}</div>
-              </div>
-            </div>
-          </div>
-          {/* Recent Transactions Section */}
-          <div className="transactions-section card-hover">
-            <h3 className="transactions-title">Transaksi Terbaru</h3>
-            {isLoading ? (
-              <div className="transactions-loading">
-                {[1,2,3,4,5].map(i => (
-                  <div key={i} className="transaction-item card-hover animate-pulse">
-                    <div className="transaction-icon bg-gray-200"></div>
-                    <div className="transaction-info">
-                      <div className="transaction-name bg-gray-200 h-4 rounded w-24"></div>
-                      <div className="transaction-category bg-gray-200 h-3 rounded w-16"></div>
-                    </div>
-                    <div className="transaction-amount bg-gray-200 h-4 rounded w-20"></div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <>
-              {transactions.length === 0 ? (
-                <div className="transactions-empty">
-                  <h3>Belum ada transaksi hari ini</h3>
-                  <p>Yuk, catat transaksi pertamamu dengan AI Assistant!</p>
-                </div>
-              ) : (
-                <>
-                <div className="transactions-list">
-                    {transactions.slice(0, 5).map((t) => (
-                      <div key={t.id} className="transaction-item-compact card-hover">
-                        <div className="transaction-icon-compact" style={{
-                        background: t.type === 'income' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                        color: t.type === 'income' ? '#10b981' : '#ef4444'
-                      }}>
-                        {t.type === 'income' ? '💰' : '💸'}
-                      </div>
-                        <div className="transaction-info-compact">
-                          <div className="transaction-name-compact">{t.description}</div>
-                          <div className="transaction-category-compact">
-                            {t.category || 'Lainnya'} • {(() => {
-                              try {
-                                const d = new Date(t.created_at);
-                                if (isNaN(d.getTime())) return "";
-                                const fmt = new Intl.DateTimeFormat('id-ID', { timeZone: 'Asia/Jakarta', day: 'numeric', month: 'short' });
-                                // Normalize month to Indonesian short names consistent with UI
-                                return fmt.format(d).replace('.', '');
-                              } catch { return ""; }
-                            })()}
-                          </div>
-                      </div>
-                        <div className={`transaction-amount-compact ${t.type === 'income' ? 'income' : 'expense'}`}>
-                        {t.type === 'income' ? '+' : '-'}Rp {(t.amount || 0).toLocaleString('id-ID')}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                  <div className="transactions-see-all-wrapper">
-                    <a href="/transactions" className="btn-secondary transactions-see-all-btn">Lihat Semua Transaksi →</a>
-                  </div>
-                </>
-              )}
-              </>
-            )}
-          </div>
-        </section>
-        {/* Right: AI Assistant */}
-        <section className="dashboard-main-right">
-        <div className="ai-assistant-card card-hover">
-          <h3 className="ai-assistant-title">AI Assistant</h3>
-          <div className="ai-assistant-content">
-            {/* AI Text Input */}
-            <div className="ai-input-section card-hover">
-              <h4 className="ai-section-title">Ketik dengan AI</h4>
-              <div className="ai-input-group">
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="e.g., makan bakso 20rb, beli bensin 50rb"
-                  className="ai-text-input"
-                  onKeyPress={async (e) => {
-                    if (e.key === 'Enter' && input.trim()) {
-                      setLoadingAdd(true);
-                      try {
-                        const { data: { session } } = await supabase.auth.getSession();
-                        if (!session?.access_token) throw new Error("Tidak ada sesi. Silakan login kembali.");
-                        const res = await fetch('/api/ai/parse', {
-                          method: 'POST',
-                          headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${session.access_token}`
-                          },
-                          body: JSON.stringify({ input: input.trim(), insert: true })
-                        });
-                        if (!res.ok) {
-                          const err = await res.json().catch(() => ({}));
-                          throw new Error(err?.error || `Gagal memproses (status ${res.status})`);
-                        }
-                        setInput("");
-                        await fetchTransactions();
-                      } catch (err) {
-                        console.error(err);
-                        alert(err instanceof Error ? err.message : 'Gagal memproses input.');
-                      } finally {
-                        setLoadingAdd(false);
-                      }
-                    }
-                  }}
-                />
-                <button
-                  onClick={async () => {
-                    if (!input.trim()) return;
-                    setLoadingAdd(true);
-                    try {
-                      const { data: { session } } = await supabase.auth.getSession();
-                      if (!session?.access_token) throw new Error("Tidak ada sesi. Silakan login kembali.");
-                      const res = await fetch('/api/ai/parse', {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json',
-                          'Authorization': `Bearer ${session.access_token}`
-                        },
-                        body: JSON.stringify({ input: input.trim(), insert: true })
-                      });
-                      if (!res.ok) {
-                        const err = await res.json().catch(() => ({}));
-                        throw new Error(err?.error || `Gagal memproses (status ${res.status})`);
-                      }
-                      setInput("");
-                      await fetchTransactions();
-                    } catch (err) {
-                      console.error(err);
-                      alert(err instanceof Error ? err.message : 'Gagal memproses input.');
-                    } finally {
-                      setLoadingAdd(false);
-                    }
-                  }}
-                  disabled={loadingAdd}
-                  className="ai-send-button"
-                >
-                  {loadingAdd ? "Memproses..." : "Kirim"}
-                </button>
-              </div>
-            </div>
-            
-            {/* Upload Receipt */}
-            <div className="ai-upload-section card-hover">
-              <h4 className="ai-section-title">Upload Struk</h4>
-              <div className="ai-upload-group">
-                <label htmlFor="receipt-upload" className="ai-upload-label">
-                  <div className="ai-upload-icon">📷</div>
-                  <div className="ai-upload-text">
-                    <span className="ai-upload-title">Klik untuk upload struk</span>
-                    <span className="ai-upload-subtitle">atau drag & drop gambar</span>
-                  </div>
-                </label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  className="ai-file-input"
-                  id="receipt-upload"
-                />
-                {ocrProgress && (
-                  <div className="ai-upload-progress">
-                    <div className="ai-upload-progress-text">{ocrProgress}</div>
-                  </div>
-                )}
+              <div className="card-value">
+                Rp {totalBalance.toLocaleString("id-ID")}
               </div>
             </div>
 
-            {/* AI Report Section */}
-            <div className="ai-report-section card-hover">
-              <h4 className="ai-section-title">Tanya AI Report</h4>
-              <div className="ai-report-group">
-                <input
-                  type="text"
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  placeholder="e.g., berapa pengeluaran bulan ini?, kategori mana yang paling besar?"
-                  className="ai-report-input"
-                  onKeyPress={(e) => e.key === 'Enter' && handleAskReport()}
-                />
-                <button
-                  onClick={handleAskReport}
-                  disabled={loadingReport}
-                  className="ai-report-button"
-                >
-                  {loadingReport ? "Memproses..." : "Tanya"}
-                </button>
-              </div>
-              {answer && (
-                <div className="ai-report-answer">
-                  <div className="ai-report-answer-content">{answer}</div>
+            <div className="card-footer cashflow-split">
+              <div>
+                <span className="cashflow-item-label">Month Inflow</span>
+                <div className="cashflow-item-val" style={{ color: "#34d399" }}>
+                  <TrendingUpIcon size={14} />
+                  <span>+Rp {monthlyIncome.toLocaleString("id-ID")}</span>
                 </div>
-              )}
+              </div>
+              <div>
+                <span className="cashflow-item-label">Month Outflow</span>
+                <div className="cashflow-item-val" style={{ color: "#fb7185" }}>
+                  <TrendingDownIcon size={14} />
+                  <span>-Rp {monthlyExpense.toLocaleString("id-ID")}</span>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+
+          {/* Today's Expense */}
+          <div className="hero-card-metric">
+            <div>
+              <div className="card-eyebrow">
+                <span style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                  <TrendingDownIcon size={14} color="#fb7185" />
+                  <span>{"Today's Expense"}</span>
+                </span>
+              </div>
+              <div className="card-value card-value-expense">
+                Rp {todayExpense.toLocaleString("id-ID")}
+              </div>
+            </div>
+            <div className="card-footer">
+              {transactions.filter((t) => t.type === "expense" && isTodayInJakarta(t.created_at)).length} entries today
+            </div>
+          </div>
+
+          {/* Today's Income */}
+          <div className="hero-card-metric">
+            <div>
+              <div className="card-eyebrow">
+                <span style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                  <TrendingUpIcon size={14} color="#34d399" />
+                  <span>{"Today's Income"}</span>
+                </span>
+              </div>
+              <div className="card-value card-value-income">
+                Rp {todayIncome.toLocaleString("id-ID")}
+              </div>
+            </div>
+            <div className="card-footer">
+              {topCategory ? `Top category: ${topCategory[0]}` : "No expenses recorded"}
+            </div>
+          </div>
         </section>
-      </div>
-      {/* Modal Add/Edit Transaction */}
+
+        {/* QUICK ACTION TILES */}
+        <section className="quick-actions-grid">
+          <Link href="/ai-copilot" className="quick-action-tile">
+            <div className="icon-badge icon-badge-primary" style={{ width: "2.5rem", height: "2.5rem" }}>
+              <SparklesIcon size={18} />
+            </div>
+            <div>
+              <div className="quick-action-label">AI Copilot</div>
+              <div className="quick-action-sub">Natural language parsing</div>
+            </div>
+          </Link>
+
+          <Link href="/ai-copilot" className="quick-action-tile">
+            <div className="icon-badge icon-badge-primary" style={{ width: "2.5rem", height: "2.5rem" }}>
+              <UploadCloudIcon size={18} />
+            </div>
+            <div>
+              <div className="quick-action-label">Scan Receipt</div>
+              <div className="quick-action-sub">OCR photo recognition</div>
+            </div>
+          </Link>
+
+          <Link href="/transactions" className="quick-action-tile">
+            <div className="icon-badge icon-badge-income" style={{ width: "2.5rem", height: "2.5rem" }}>
+              <ReceiptIcon size={18} />
+            </div>
+            <div>
+              <div className="quick-action-label">View Ledger</div>
+              <div className="quick-action-sub">All {transactions.length} records</div>
+            </div>
+          </Link>
+
+          <Link href="/analytics" className="quick-action-tile">
+            <div className="icon-badge icon-badge-primary" style={{ width: "2.5rem", height: "2.5rem" }}>
+              <TrendingUpIcon size={18} />
+            </div>
+            <div>
+              <div className="quick-action-label">Analytics</div>
+              <div className="quick-action-sub">Spending breakdown</div>
+            </div>
+          </Link>
+        </section>
+
+        {/* RECENT TRANSACTIONS PANEL */}
+        <section style={{ marginTop: "1.5rem" }}>
+          <div className="panel">
+            <div className="panel-header">
+              <div>
+                <h2 className="panel-title">
+                  <ReceiptIcon size={18} color="#818cf8" />
+                  <span>Recent Transactions</span>
+                </h2>
+                <p className="panel-subtitle">Latest records from your ledger</p>
+              </div>
+              <Link
+                href="/transactions"
+                style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--color-primary)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "0.25rem" }}
+              >
+                <span>View Full Ledger ({transactions.length})</span>
+                <ArrowUpRightIcon size={14} />
+              </Link>
+            </div>
+
+            {/* Search & Type Toolbar */}
+            <div className="toolbar-row">
+              <div className="search-input-wrap">
+                <div className="search-icon-inside">
+                  <SearchIcon size={15} />
+                </div>
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Filter recent transactions..."
+                  className="input-text has-icon"
+                />
+              </div>
+
+              <div className="segmented-group">
+                <button
+                  onClick={() => setSelectedType("all")}
+                  className={`segmented-btn ${selectedType === "all" ? "active" : ""}`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setSelectedType("expense")}
+                  className={`segmented-btn ${selectedType === "expense" ? "active" : ""}`}
+                  style={selectedType === "expense" ? { color: "#fb7185" } : {}}
+                >
+                  <TrendingDownIcon size={12} />
+                  <span>Expenses</span>
+                </button>
+                <button
+                  onClick={() => setSelectedType("income")}
+                  className={`segmented-btn ${selectedType === "income" ? "active" : ""}`}
+                  style={selectedType === "income" ? { color: "#34d399" } : {}}
+                >
+                  <TrendingUpIcon size={12} />
+                  <span>Income</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Transactions List */}
+            {isLoading ? (
+              <div style={{ padding: "2rem", textAlign: "center", color: "var(--text-muted)", fontSize: "0.8125rem" }}>
+                Loading transactions...
+              </div>
+            ) : filteredTransactions.length === 0 ? (
+              <div className="empty-state">
+                <div className="icon-badge icon-badge-neutral" style={{ width: "3rem", height: "3rem", margin: "0 auto 0.75rem auto" }}>
+                  <ReceiptIcon size={20} />
+                </div>
+                <h3 className="empty-state-title">No transactions found</h3>
+                <p className="empty-state-desc">
+                  {searchQuery || selectedType !== "all"
+                    ? "No records matched your search."
+                    : "Start tracking by recording your first transaction."}
+                </p>
+                <button
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="btn btn-primary btn-sm"
+                >
+                  <PlusIcon size={14} />
+                  <span>Record Transaction</span>
+                </button>
+              </div>
+            ) : (
+              <div className="transaction-list">
+                {filteredTransactions.slice(0, 5).map((t) => (
+                  <div key={t.id} className="transaction-card">
+                    <div className="transaction-info-main">
+                      <div
+                        className={`icon-badge ${t.type === "income" ? "icon-badge-income" : "icon-badge-neutral"}`}
+                        style={{ width: "2.25rem", height: "2.25rem" }}
+                      >
+                        <CategoryIcon category={t.category} size={16} />
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div className="transaction-desc">{t.description}</div>
+                        <div className="transaction-meta">
+                          <span className="category-tag">{t.category || "Other"}</span>
+                          <span>•</span>
+                          <span>
+                            {(() => {
+                              try {
+                                const d = new Date(t.created_at);
+                                if (isNaN(d.getTime())) return "";
+                                return new Intl.DateTimeFormat("en-US", {
+                                  timeZone: "Asia/Jakarta",
+                                  month: "short",
+                                  day: "numeric",
+                                }).format(d);
+                              } catch {
+                                return "";
+                              }
+                            })()}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="transaction-amount-side">
+                      <div className={`amount-display ${t.type === "income" ? "amount-income" : "amount-expense"}`}>
+                        {t.type === "income" ? "+" : "-"}Rp {t.amount.toLocaleString("id-ID")}
+                      </div>
+
+                      <div className="action-links">
+                        <button
+                          onClick={() => setEditTransaction(t)}
+                          className="action-btn-icon"
+                          title="Edit transaction"
+                          aria-label="Edit"
+                        >
+                          <EditIcon size={14} />
+                        </button>
+                        <button
+                          onClick={() => setDeleteTargetId(t.id)}
+                          className="action-btn-icon delete"
+                          title="Delete transaction"
+                          aria-label="Delete"
+                        >
+                          <TrashIcon size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      </main>
+
+      {/* MODALS */}
       <TransactionForm
         isOpen={isAddModalOpen}
-        onClose={closeAddModal}
+        onClose={() => setIsAddModalOpen(false)}
         onSubmit={handleAddTransaction}
         mode="add"
       />
+
       {editTransaction && (
         <TransactionForm
           transaction={editTransaction}
-          isOpen={isEditModalOpen}
-          onClose={closeEditModal}
+          isOpen={Boolean(editTransaction)}
+          onClose={() => setEditTransaction(null)}
           onSubmit={handleEditSave}
           mode="edit"
         />
       )}
+
+      <ConfirmModal
+        isOpen={Boolean(deleteTargetId)}
+        title="Delete Transaction"
+        message="Are you sure you want to permanently delete this transaction record?"
+        confirmText="Delete"
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTargetId(null)}
+      />
     </div>
   );
 }

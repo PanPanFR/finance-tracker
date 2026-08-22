@@ -53,17 +53,17 @@ export async function scanReceipt(file: File, options: ScanOptions = {}): Promis
     await worker.setParameters({
       tessedit_char_whitelist: "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-/:,.@()%+ ",
       preserve_interword_spaces: "1",
-      tessedit_pageseg_mode: "6"
-    } as any); 
+      tessedit_pageseg_mode: "6",
+    } as Record<string, string>);
 
     const image = options.enhance ? await preprocessImage(file) : file;
 
-    let result = await worker.recognize(image, { rotateAuto: true } as any);
+    let result = await worker.recognize(image, { rotateAuto: true } as Record<string, boolean>);
 
     // If confidence is low, try a different PSM (3 = AUTO) for multi-column receipts
     if ((result?.data?.confidence || 0) < 65) {
-      await worker.setParameters({ tessedit_pageseg_mode: "3" } as any);
-      result = await worker.recognize(image, { rotateAuto: true } as any);
+      await worker.setParameters({ tessedit_pageseg_mode: "3" } as Record<string, string>);
+      result = await worker.recognize(image, { rotateAuto: true } as Record<string, boolean>);
     }
 
     return result?.data?.text || "";
