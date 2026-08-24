@@ -24,6 +24,7 @@ export default function Navigation() {
   const pathname = usePathname();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isBottomNavHidden, setIsBottomNavHidden] = useState(false);
   const { success, error: toastError } = useToast();
 
   const navItems = [
@@ -73,7 +74,26 @@ export default function Navigation() {
   // Close sidebar automatically when route changes
   useEffect(() => {
     setIsSidebarOpen(false);
+    setIsBottomNavHidden(false);
   }, [pathname]);
+
+  // Auto-hide bottom nav on scroll down, reveal on scroll up (rAF-throttled)
+  useEffect(() => {
+    let lastY = window.scrollY;
+    let ticking = false;
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        const y = window.scrollY;
+        setIsBottomNavHidden(y > lastY && y > 96);
+        lastY = y;
+        ticking = false;
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
 
   const currentNavItem = navItems.find((item) => item.href === pathname) || navItems[0];
 
@@ -140,6 +160,7 @@ export default function Navigation() {
             <button
               onClick={() => setIsAddModalOpen(true)}
               className="btn btn-primary btn-sm"
+              aria-label="Add transaction"
             >
               <PlusIcon size={14} className="icon-wrap" />
               <span>Add</span>
@@ -248,7 +269,7 @@ export default function Navigation() {
       </aside>
 
       {/* Mobile Fixed Bottom Navigation Bar (Preserved as requested) */}
-      <nav className="mobile-bottom-nav">
+      <nav className={`mobile-bottom-nav ${isBottomNavHidden ? "nav-hidden" : ""}`}>
         <div className="mobile-bottom-nav-inner">
           {navItems.map((item) => {
             const Icon = item.icon;
