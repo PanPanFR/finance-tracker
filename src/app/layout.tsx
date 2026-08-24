@@ -24,29 +24,38 @@ export const metadata: Metadata = {
   },
 };
 
+// WCAG 1.4.4 (Resize Text): no maximumScale/userScalable restrictions —
+// pinch-to-zoom must remain available.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
   themeColor: "#09090b",
 };
 
+// Applies the persisted theme (or prefers-color-scheme) before first paint
+// to avoid a flash of the wrong theme.
+const themeInitScript = `(function(){try{var t=localStorage.getItem("ft-theme");if(t!=="light"&&t!=="dark"){t=window.matchMedia&&window.matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";}var el=document.documentElement;el.classList.remove("light","dark");el.classList.add(t);}catch(e){}})();`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" suppressHydrationWarning>
       <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <meta name="theme-color" content="#09090b" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="AI Finance Tracker" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
-      <body className={`${inter.className} bg-[#09090b] text-zinc-100 min-h-screen antialiased selection:bg-indigo-500/30 selection:text-indigo-200`}>
+      <body className={`${inter.className} min-h-screen antialiased selection:bg-indigo-500/30 selection:text-indigo-200`}>
+        <a href="#main-content" className="skip-link">
+          Skip to main content
+        </a>
         <AuthProvider>
           <ToastProvider>
-            {children}
+            <div id="main-content" tabIndex={-1}>
+              {children}
+            </div>
           </ToastProvider>
         </AuthProvider>
       </body>

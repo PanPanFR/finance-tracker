@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, getSessionSecret, SESSION_COOKIE_NAME } from "../../../lib/auth";
 import { getDB, getAllTransactions, insertTransaction } from "../../../lib/db";
+import { validateCsrfToken, csrfErrorResponse } from "../../../lib/csrf";
 
 export const runtime = "edge";
 
@@ -35,6 +36,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   if (!(await requireAuth(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!validateCsrfToken(request)) {
+    return csrfErrorResponse();
   }
 
   try {

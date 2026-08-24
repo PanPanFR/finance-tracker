@@ -4,16 +4,28 @@ import React, { createContext, useContext, useState, useCallback, ReactNode } fr
 
 export type ToastType = "success" | "error" | "info";
 
+export interface ToastAction {
+  label: string;
+  onClick: () => void;
+}
+
 export interface ToastItem {
   id: string;
   title?: string;
   message: string;
   type: ToastType;
   duration?: number;
+  action?: ToastAction;
 }
 
 interface ToastContextValue {
-  showToast: (message: string, type?: ToastType, title?: string, duration?: number) => void;
+  showToast: (
+    message: string,
+    type?: ToastType,
+    title?: string,
+    duration?: number,
+    action?: ToastAction
+  ) => void;
   success: (message: string, title?: string) => void;
   error: (message: string, title?: string) => void;
   info: (message: string, title?: string) => void;
@@ -37,9 +49,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const showToast = useCallback(
-    (message: string, type: ToastType = "info", title?: string, duration = 3500) => {
+    (
+      message: string,
+      type: ToastType = "info",
+      title?: string,
+      duration = 3500,
+      action?: ToastAction
+    ) => {
       const id = Math.random().toString(36).substring(2, 9);
-      setToasts((prev) => [...prev, { id, message, type, title, duration }]);
+      setToasts((prev) => [...prev, { id, message, type, title, duration, action }]);
 
       if (duration > 0) {
         setTimeout(() => {
@@ -66,13 +84,25 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ showToast, success, error, info }}>
       {children}
-      <div className="toast-viewport">
+      {/* aria-live so toast messages are announced by screen readers */}
+      <div className="toast-viewport" aria-live="polite">
         {toasts.map((toast) => (
-          <div key={toast.id} className={`toast-item ${toast.type}`}>
+          <div key={toast.id} className={`toast-item ${toast.type}`} role="status">
             <div>
               {toast.title && <div className="toast-title">{toast.title}</div>}
               <div className="toast-msg">{toast.message}</div>
             </div>
+            {toast.action && (
+              <button
+                onClick={() => {
+                  toast.action?.onClick();
+                  removeToast(toast.id);
+                }}
+                className="toast-action-btn"
+              >
+                {toast.action.label}
+              </button>
+            )}
             <button
               onClick={() => removeToast(toast.id)}
               className="toast-close"

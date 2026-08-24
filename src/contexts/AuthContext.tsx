@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { apiFetch } from "../lib/client-api";
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -31,7 +32,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      await apiFetch("/api/auth/logout", { method: "POST" });
       setIsAuthenticated(false);
       window.location.reload();
     } catch (error) {

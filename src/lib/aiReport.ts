@@ -1,3 +1,5 @@
+import { apiFetch } from "./client-api";
+
 export type ReportTransaction = {
   description: string;
   amount: number;
@@ -8,11 +10,10 @@ export type ReportTransaction = {
 
 export async function askReport(question: string): Promise<string> {
   try {
-    const res = await fetch("/api/ai/report", {
+    const res = await apiFetch("/api/ai/report", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question }),
-      credentials: "include",
     });
 
     if (!res.ok) {

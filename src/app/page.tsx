@@ -7,7 +7,9 @@ import { useAuth } from "../contexts/AuthContext";
 import PasswordGate from "../components/PasswordGate";
 import TransactionForm from "../components/TransactionForm";
 import ConfirmModal from "../components/ConfirmModal";
+import { SkeletonList } from "../components/Skeleton";
 import { useToast } from "../components/Toast";
+import { apiFetch } from "../lib/client-api";
 import {
   WalletIcon,
   TrendingDownIcon,
@@ -43,7 +45,7 @@ export default function Home() {
   const [editTransaction, setEditTransaction] = useState<Transaction | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
 
-  const { success, error: toastError } = useToast();
+  const { success, showToast, error: toastError } = useToast();
 
   const fetchTransactions = useCallback(async () => {
     setIsLoading(true);
@@ -111,26 +113,15 @@ export default function Home() {
     return t.type === "income" ? acc + t.amount : acc - t.amount;
   }, 0);
 
-  const categorySpendingMap: Record<string, number> = {};
-  transactions
-    .filter((t) => t.type === "expense" && isCurrentMonthInJakarta(t.created_at))
-    .forEach((t) => {
-      const cat = t.category || "Other";
-      categorySpendingMap[cat] = (categorySpendingMap[cat] || 0) + t.amount;
-    });
-
-  const topCategory = Object.entries(categorySpendingMap).sort((a, b) => b[1] - a[1])[0];
-
   const handleAddTransaction = async (transactionData: Omit<Transaction, "id" | "created_at">) => {
     try {
-      const res = await fetch("/api/transactions", {
+      const res = await apiFetch("/api/transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...transactionData,
           created_at: new Date().toISOString(),
         }),
-        credentials: "include",
       });
 
       if (!res.ok) throw new Error("Insert failed");
@@ -146,7 +137,7 @@ export default function Home() {
     if (!editTransaction) return;
 
     try {
-      const res = await fetch(`/api/transactions/${editTransaction.id}`, {
+      const res = await apiFetch(`/api/transactions/${editTransaction.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -155,7 +146,6 @@ export default function Home() {
           category: transactionData.category || "Other",
           type: transactionData.type || "expense",
         }),
-        credentials: "include",
       });
 
       if (!res.ok) throw new Error("Update failed");
@@ -167,19 +157,45 @@ export default function Home() {
     }
   };
 
+  /** Re-insert a deleted transaction with its original data (Undo delete) */
+  const restoreTransaction = async (txn: Transaction) => {
+    try {
+      const res = await apiFetch("/api/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          description: txn.description,
+          amount: txn.amount,
+          category: txn.category || "Other",
+          type: txn.type,
+          created_at: txn.created_at,
+        }),
+      });
+      if (!res.ok) throw new Error("Restore failed");
+      success("Transaction restored");
+      await fetchTransactions();
+    } catch {
+      toastError("Failed to restore transaction");
+    }
+  };
+
   const confirmDelete = async () => {
     if (!deleteTargetId) return;
+    const target = transactions.find((t) => t.id === deleteTargetId);
     const id = deleteTargetId;
     setDeleteTargetId(null);
     setTransactions((prev) => prev.filter((t) => t.id !== id));
 
     try {
-      const res = await fetch(`/api/transactions/${id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
+      const res = await apiFetch(`/api/transactions/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Delete failed");
-      success("Transaction deleted");
+      showToast(
+        "Transaction deleted",
+        "success",
+        undefined,
+        7000,
+        target ? { label: "Undo", onClick: () => restoreTransaction(target) } : undefined
+      );
     } catch {
       toastError("Failed to delete transaction");
       await fetchTransactions();
@@ -202,7 +218,7 @@ export default function Home() {
 
   if (authLoading) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-app)", color: "var(--text-muted)", fontSize: "0.875rem" }}>
+      <div className="auth-loading-screen">
         Loading session...
       </div>
     );
@@ -212,84 +228,110 @@ export default function Home() {
     return <PasswordGate onSuccess={() => {}} />;
   }
 
+  const hasNoData = !isLoading && transactions.length === 0;
+
   return (
     <div className="page-wrapper">
       <Navigation />
 
       <main className="app-container">
-        {/* HERO METRICS BENTO GRID */}
-        <section className="hero-grid">
-          {/* Net Balance Card */}
-          <div className="hero-card-main">
-            <div>
-              <div className="card-eyebrow">
-                <span style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                  <WalletIcon size={14} color="#818cf8" />
-                  <span>Estimated Net Balance</span>
-                </span>
-                <span style={{ fontSize: "0.6875rem", fontWeight: 700, color: totalBalance >= 0 ? "var(--color-income)" : "var(--color-expense)" }}>
-                  {totalBalance >= 0 ? "Positive Flow" : "Deficit"}
-                </span>
-              </div>
-              <div className="card-value">
-                Rp {totalBalance.toLocaleString("id-ID")}
-              </div>
+        {/* ONBOARDING STATE for first-time users */}
+        {hasNoData ? (
+          <section className="panel empty-state empty-state-cta" style={{ marginTop: "1.25rem" }}>
+            <div className="icon-badge icon-badge-primary" style={{ width: "3.5rem", height: "3.5rem", margin: "0 auto 1rem auto" }}>
+              <WalletIcon size={24} />
             </div>
-
-            <div className="card-footer cashflow-split">
+            <h2 className="empty-state-title" style={{ fontSize: "1rem" }}>
+              No data yet — record your first transaction
+            </h2>
+            <p className="empty-state-desc">
+              Track an expense or income and your balance, insights, and analytics will appear here.
+            </p>
+            <div className="onboarding-actions">
+              <button onClick={() => setIsAddModalOpen(true)} className="btn btn-primary">
+                <PlusIcon size={14} />
+                <span>Record First Transaction</span>
+              </button>
+              <Link href="/ai-copilot" className="btn btn-secondary">
+                <SparklesIcon size={14} />
+                <span>Try AI Copilot</span>
+              </Link>
+            </div>
+          </section>
+        ) : (
+          <section className="hero-grid">
+            {/* Net Balance Card */}
+            <div className="hero-card-main">
               <div>
-                <span className="cashflow-item-label">Month Inflow</span>
-                <div className="cashflow-item-val" style={{ color: "#34d399" }}>
-                  <TrendingUpIcon size={14} />
-                  <span>+Rp {monthlyIncome.toLocaleString("id-ID")}</span>
+                <div className="card-eyebrow">
+                  <span style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                    <WalletIcon size={14} color="#818cf8" />
+                    <span>Estimated Net Balance</span>
+                  </span>
+                  <span style={{ fontSize: "0.6875rem", fontWeight: 700, color: totalBalance >= 0 ? "var(--color-income)" : "var(--color-expense)" }}>
+                    {totalBalance >= 0 ? "Positive Flow" : "Deficit"}
+                  </span>
+                </div>
+                <div className="card-value">
+                  Rp {totalBalance.toLocaleString("id-ID")}
                 </div>
               </div>
-              <div>
-                <span className="cashflow-item-label">Month Outflow</span>
-                <div className="cashflow-item-val" style={{ color: "#fb7185" }}>
-                  <TrendingDownIcon size={14} />
-                  <span>-Rp {monthlyExpense.toLocaleString("id-ID")}</span>
+
+              <div className="card-footer cashflow-split">
+                <div>
+                  <span className="cashflow-item-label">Month Inflow</span>
+                  <div className="cashflow-item-val" style={{ color: "var(--income-text)" }}>
+                    <TrendingUpIcon size={14} />
+                    <span>+Rp {monthlyIncome.toLocaleString("id-ID")}</span>
+                  </div>
+                </div>
+                <div>
+                  <span className="cashflow-item-label">Month Outflow</span>
+                  <div className="cashflow-item-val" style={{ color: "var(--expense-text)" }}>
+                    <TrendingDownIcon size={14} />
+                    <span>-Rp {monthlyExpense.toLocaleString("id-ID")}</span>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* Today's Expense */}
-          <div className="hero-card-metric">
-            <div>
-              <div className="card-eyebrow">
-                <span style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                  <TrendingDownIcon size={14} color="#fb7185" />
-                  <span>{"Today's Expense"}</span>
-                </span>
+            {/* Today's Expense */}
+            <div className="hero-card-metric">
+              <div>
+                <div className="card-eyebrow">
+                  <span style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                    <TrendingDownIcon size={14} color="var(--expense-text)" />
+                    <span>{"Today's Expense"}</span>
+                  </span>
+                </div>
+                <div className="card-value card-value-expense">
+                  Rp {todayExpense.toLocaleString("id-ID")}
+                </div>
               </div>
-              <div className="card-value card-value-expense">
-                Rp {todayExpense.toLocaleString("id-ID")}
+              <div className="card-footer">
+                {transactions.filter((t) => t.type === "expense" && isTodayInJakarta(t.created_at)).length} entries today
               </div>
             </div>
-            <div className="card-footer">
-              {transactions.filter((t) => t.type === "expense" && isTodayInJakarta(t.created_at)).length} entries today
-            </div>
-          </div>
 
-          {/* Today's Income */}
-          <div className="hero-card-metric">
-            <div>
-              <div className="card-eyebrow">
-                <span style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                  <TrendingUpIcon size={14} color="#34d399" />
-                  <span>{"Today's Income"}</span>
-                </span>
+            {/* Today's Income */}
+            <div className="hero-card-metric">
+              <div>
+                <div className="card-eyebrow">
+                  <span style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                    <TrendingUpIcon size={14} color="var(--income-text)" />
+                    <span>{"Today's Income"}</span>
+                  </span>
+                </div>
+                <div className="card-value card-value-income">
+                  Rp {todayIncome.toLocaleString("id-ID")}
+                </div>
               </div>
-              <div className="card-value card-value-income">
-                Rp {todayIncome.toLocaleString("id-ID")}
+              <div className="card-footer">
+                {transactions.filter((t) => t.type === "income" && isTodayInJakarta(t.created_at)).length} entries today
               </div>
             </div>
-            <div className="card-footer">
-              {topCategory ? `Top category: ${topCategory[0]}` : "No expenses recorded"}
-            </div>
-          </div>
-        </section>
+          </section>
+        )}
 
         {/* QUICK ACTION TILES */}
         <section className="quick-actions-grid">
@@ -303,7 +345,7 @@ export default function Home() {
             </div>
           </Link>
 
-          <Link href="/ai-copilot" className="quick-action-tile">
+          <Link href="/ai-copilot#ocr-scanner" className="quick-action-tile">
             <div className="icon-badge icon-badge-primary" style={{ width: "2.5rem", height: "2.5rem" }}>
               <UploadCloudIcon size={18} />
             </div>
@@ -366,6 +408,7 @@ export default function Home() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Filter recent transactions..."
                   className="input-text has-icon"
+                  aria-label="Search transactions"
                 />
               </div>
 
@@ -373,13 +416,15 @@ export default function Home() {
                 <button
                   onClick={() => setSelectedType("all")}
                   className={`segmented-btn ${selectedType === "all" ? "active" : ""}`}
+                  aria-pressed={selectedType === "all"}
                 >
                   All
                 </button>
                 <button
                   onClick={() => setSelectedType("expense")}
                   className={`segmented-btn ${selectedType === "expense" ? "active" : ""}`}
-                  style={selectedType === "expense" ? { color: "#fb7185" } : {}}
+                  aria-pressed={selectedType === "expense"}
+                  style={selectedType === "expense" ? { color: "var(--expense-text)" } : {}}
                 >
                   <TrendingDownIcon size={12} />
                   <span>Expenses</span>
@@ -387,7 +432,8 @@ export default function Home() {
                 <button
                   onClick={() => setSelectedType("income")}
                   className={`segmented-btn ${selectedType === "income" ? "active" : ""}`}
-                  style={selectedType === "income" ? { color: "#34d399" } : {}}
+                  aria-pressed={selectedType === "income"}
+                  style={selectedType === "income" ? { color: "var(--income-text)" } : {}}
                 >
                   <TrendingUpIcon size={12} />
                   <span>Income</span>
@@ -397,9 +443,7 @@ export default function Home() {
 
             {/* Transactions List */}
             {isLoading ? (
-              <div style={{ padding: "2rem", textAlign: "center", color: "var(--text-muted)", fontSize: "0.8125rem" }}>
-                Loading transactions...
-              </div>
+              <SkeletonList count={4} label="Loading transactions..." />
             ) : filteredTransactions.length === 0 ? (
               <div className="empty-state">
                 <div className="icon-badge icon-badge-neutral" style={{ width: "3rem", height: "3rem", margin: "0 auto 0.75rem auto" }}>
@@ -464,7 +508,7 @@ export default function Home() {
                           onClick={() => setEditTransaction(t)}
                           className="action-btn-icon"
                           title="Edit transaction"
-                          aria-label="Edit"
+                          aria-label={`Edit ${t.description}`}
                         >
                           <EditIcon size={14} />
                         </button>
@@ -472,7 +516,7 @@ export default function Home() {
                           onClick={() => setDeleteTargetId(t.id)}
                           className="action-btn-icon delete"
                           title="Delete transaction"
-                          aria-label="Delete"
+                          aria-label={`Delete ${t.description}`}
                         >
                           <TrashIcon size={14} />
                         </button>

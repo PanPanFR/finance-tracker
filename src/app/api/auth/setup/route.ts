@@ -7,16 +7,21 @@ import {
   SESSION_EXPIRY_MS,
 } from "../../../../lib/auth";
 import { getDB, getSetting, setSetting } from "../../../../lib/db";
+import { validateCsrfToken, csrfErrorResponse } from "../../../../lib/csrf";
 
 export const runtime = "edge";
 
 export async function POST(request: NextRequest) {
   try {
+    if (!validateCsrfToken(request)) {
+      return csrfErrorResponse();
+    }
+
     const { password } = await request.json();
 
-    if (!password || typeof password !== "string" || password.length < 4) {
+    if (!password || typeof password !== "string" || password.length < 8) {
       return NextResponse.json(
-        { error: "Password must be at least 4 characters long" },
+        { error: "Password must be at least 8 characters long" },
         { status: 400 }
       );
     }

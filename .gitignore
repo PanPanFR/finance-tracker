@@ -33,6 +33,13 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# cloudflare local dev secrets
+.dev.vars
+
+# local tooling artifacts
+/data/
+/graphify-out/
+
 # cloudflare
 .wrangler
 .vercel

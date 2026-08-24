@@ -7,8 +7,10 @@ import {
   XIcon,
   PlusIcon,
   EditIcon,
+  RefreshCwIcon,
   CategoryIcon,
 } from "./Icons";
+import { useModalAccessibility } from "../hooks/useModalAccessibility";
 
 interface Transaction {
   id: string;
@@ -19,11 +21,16 @@ interface Transaction {
   created_at: string;
 }
 
+interface FormErrors {
+  description?: string;
+  amount?: string;
+}
+
 interface TransactionFormProps {
   transaction?: Transaction;
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (transaction: Omit<Transaction, "id" | "created_at">) => void;
+  onSubmit: (transaction: Omit<Transaction, "id" | "created_at">) => void | Promise<void>;
   mode: "add" | "edit";
 }
 
@@ -61,6 +68,10 @@ export default function TransactionForm({
     type: "expense" as "income" | "expense",
     category: "Food & Drinks",
   });
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [submitting, setSubmitting] = useState(false);
+
+  const dialogRef = useModalAccessibility<HTMLDivElement>(isOpen, onClose);
 
   useEffect(() => {
     if (transaction && mode === "edit") {
@@ -78,33 +89,61 @@ export default function TransactionForm({
         category: "Food & Drinks",
       });
     }
+    setErrors({});
+    setSubmitting(false);
   }, [transaction, mode, isOpen]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const validate = (): boolean => {
+    const next: FormErrors = {};
+    if (!formData.description.trim()) {
+      next.description = "Description is required.";
+    }
+    if (formData.amount.trim() === "" || isNaN(parseFloat(formData.amount))) {
+      next.amount = "Amount is required.";
+    } else if (parseFloat(formData.amount) <= 0) {
+      next.amount = "Amount must be greater than 0.";
+    }
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const parsedAmount = parseFloat(formData.amount);
-    if (!formData.description.trim() || isNaN(parsedAmount) || parsedAmount <= 0) return;
+    if (submitting || !validate()) return;
 
-    onSubmit({
-      description: formData.description.trim(),
-      amount: parsedAmount,
-      type: formData.type,
-      category: formData.category || "Other",
-    });
-
-    onClose();
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        description: formData.description.trim(),
+        amount: parseFloat(formData.amount),
+        type: formData.type,
+        category: formData.category || "Other",
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const addPreset = (val: number) => {
     const current = parseFloat(formData.amount) || 0;
     setFormData((prev) => ({ ...prev, amount: (current + val).toString() }));
+    setErrors((prev) => ({ ...prev, amount: undefined }));
   };
 
   if (!isOpen) return null;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-dialog" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "520px" }}>
+      <div
+        ref={dialogRef}
+        className="modal-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="transaction-form-title"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: "520px" }}
+      >
         <div className="modal-header-row">
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
             <div
@@ -114,7 +153,7 @@ export default function TransactionForm({
               {mode === "add" ? <PlusIcon size={18} /> : <EditIcon size={18} />}
             </div>
             <div>
-              <h2 className="modal-title-text" style={{ fontSize: "1rem" }}>
+              <h2 id="transaction-form-title" className="modal-title-text" style={{ fontSize: "1rem" }}>
                 {mode === "add" ? "Record Transaction" : "Edit Transaction"}
               </h2>
               <p style={{ fontSize: "0.6875rem", color: "var(--text-muted)", marginTop: "0.1rem" }}>
@@ -122,12 +161,12 @@ export default function TransactionForm({
               </p>
             </div>
           </div>
-          <button onClick={onClose} className="toast-close" aria-label="Close dialog">
+          <button onClick={onClose} className="toast-close" aria-label="Close dialog" disabled={submitting}>
             <XIcon size={18} />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} noValidate>
           {/* Type Toggle */}
           <div className="form-group">
             <label className="form-label">Type</label>
@@ -136,7 +175,8 @@ export default function TransactionForm({
                 type="button"
                 onClick={() => setFormData({ ...formData, type: "expense" })}
                 className={`segmented-btn ${formData.type === "expense" ? "active" : ""}`}
-                style={formData.type === "expense" ? { color: "#fb7185" } : {}}
+                aria-pressed={formData.type === "expense"}
+                style={formData.type === "expense" ? { color: "var(--expense-text)" } : {}}
               >
                 <TrendingDownIcon size={14} className="icon-wrap" />
                 <span>Expense</span>
@@ -145,7 +185,8 @@ export default function TransactionForm({
                 type="button"
                 onClick={() => setFormData({ ...formData, type: "income" })}
                 className={`segmented-btn ${formData.type === "income" ? "active" : ""}`}
-                style={formData.type === "income" ? { color: "#34d399" } : {}}
+                aria-pressed={formData.type === "income"}
+                style={formData.type === "income" ? { color: "var(--income-text)" } : {}}
               >
                 <TrendingUpIcon size={14} className="icon-wrap" />
                 <span>Income</span>
@@ -156,7 +197,7 @@ export default function TransactionForm({
           {/* Amount Field & Presets */}
           <div className="form-group">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.35rem" }}>
-              <label className="form-label" style={{ marginBottom: 0 }}>Amount (IDR)</label>
+              <label htmlFor="transaction-amount" className="form-label" style={{ marginBottom: 0 }}>Amount (IDR)</label>
               {formData.amount && !isNaN(Number(formData.amount)) && Number(formData.amount) > 0 && (
                 <span style={{ fontSize: "0.75rem", fontFamily: "var(--font-mono)", color: "var(--color-primary)", fontWeight: 700 }}>
                   Rp {Number(formData.amount).toLocaleString("id-ID")}
@@ -164,17 +205,25 @@ export default function TransactionForm({
               )}
             </div>
             <input
+              id="transaction-amount"
               type="number"
               value={formData.amount}
-              onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-              className="input-text"
+              onChange={(e) => {
+                setFormData({ ...formData, amount: e.target.value });
+                if (errors.amount) setErrors((prev) => ({ ...prev, amount: undefined }));
+              }}
+              className={`input-text ${errors.amount ? "invalid" : ""}`}
               style={{ fontSize: "1rem", fontWeight: 700, fontFamily: "var(--font-mono)" }}
               placeholder="0"
               min="1"
               step="any"
-              required
               autoFocus={mode === "add"}
+              aria-invalid={Boolean(errors.amount)}
+              aria-describedby={errors.amount ? "transaction-amount-error" : undefined}
             />
+            {errors.amount && (
+              <p id="transaction-amount-error" className="field-error">{errors.amount}</p>
+            )}
 
             <div className="preset-pills">
               {AMOUNT_PRESETS.map((p) => (
@@ -183,6 +232,7 @@ export default function TransactionForm({
                   type="button"
                   onClick={() => addPreset(p.value)}
                   className="preset-pill-btn"
+                  aria-label={`Add ${p.value.toLocaleString("id-ID")} to amount`}
                 >
                   {p.label}
                 </button>
@@ -193,6 +243,7 @@ export default function TransactionForm({
                   onClick={() => setFormData({ ...formData, amount: "" })}
                   className="preset-pill-btn"
                   style={{ color: "var(--text-muted)" }}
+                  aria-label="Clear amount"
                 >
                   Clear
                 </button>
@@ -202,21 +253,29 @@ export default function TransactionForm({
 
           {/* Description */}
           <div className="form-group">
-            <label className="form-label">Description / Note</label>
+            <label htmlFor="transaction-description" className="form-label">Description / Note</label>
             <input
+              id="transaction-description"
               type="text"
               value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="input-text"
+              onChange={(e) => {
+                setFormData({ ...formData, description: e.target.value });
+                if (errors.description) setErrors((prev) => ({ ...prev, description: undefined }));
+              }}
+              className={`input-text ${errors.description ? "invalid" : ""}`}
               placeholder="e.g. Starbucks Latte, KRL Ticket, Freelance Fee"
-              required
+              aria-invalid={Boolean(errors.description)}
+              aria-describedby={errors.description ? "transaction-description-error" : undefined}
             />
+            {errors.description && (
+              <p id="transaction-description-error" className="field-error">{errors.description}</p>
+            )}
           </div>
 
           {/* Category Selector with Category SVG Icons */}
           <div className="form-group">
             <label className="form-label">Category</label>
-            <div className="category-select-grid">
+            <div className="category-select-grid" role="radiogroup" aria-label="Transaction category">
               {CATEGORIES.map((cat) => {
                 const isSelected = formData.category === cat;
                 return (
@@ -225,6 +284,8 @@ export default function TransactionForm({
                     type="button"
                     onClick={() => setFormData({ ...formData, category: cat })}
                     className={`category-select-btn ${isSelected ? "active" : ""}`}
+                    role="radio"
+                    aria-checked={isSelected}
                   >
                     <CategoryIcon category={cat} size={15} />
                     <span style={{ fontSize: "0.6875rem" }}>{cat}</span>
@@ -240,14 +301,21 @@ export default function TransactionForm({
               type="button"
               onClick={onClose}
               className="btn btn-secondary"
+              disabled={submitting}
             >
               Cancel
             </button>
             <button
               type="submit"
               className="btn btn-primary"
+              disabled={submitting}
             >
-              {mode === "add" ? (
+              {submitting ? (
+                <>
+                  <RefreshCwIcon size={14} className="icon-wrap spin-animation" />
+                  <span>Saving...</span>
+                </>
+              ) : mode === "add" ? (
                 <>
                   <PlusIcon size={14} className="icon-wrap" />
                   <span>Record Entry</span>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySessionToken, getSessionSecret, SESSION_COOKIE_NAME } from "../../../../lib/auth";
 import { getDB, updateTransaction, deleteTransaction } from "../../../../lib/db";
+import { validateCsrfToken, csrfErrorResponse } from "../../../../lib/csrf";
 
 export const runtime = "edge";
 
@@ -18,6 +19,10 @@ export async function PUT(
 ) {
   if (!(await requireAuth(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!validateCsrfToken(request)) {
+    return csrfErrorResponse();
   }
 
   try {
@@ -54,6 +59,10 @@ export async function DELETE(
 ) {
   if (!(await requireAuth(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!validateCsrfToken(request)) {
+    return csrfErrorResponse();
   }
 
   try {

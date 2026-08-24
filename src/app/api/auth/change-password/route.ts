@@ -7,6 +7,7 @@ import {
   getSessionSecret,
 } from "../../../../lib/auth";
 import { getDB, getSetting, setSetting } from "../../../../lib/db";
+import { validateCsrfToken, csrfErrorResponse } from "../../../../lib/csrf";
 
 export const runtime = "edge";
 
@@ -24,11 +25,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    if (!validateCsrfToken(request)) {
+      return csrfErrorResponse();
+    }
+
     const { oldPassword, newPassword } = await request.json();
 
-    if (!oldPassword || !newPassword || newPassword.length < 4) {
+    if (!oldPassword || !newPassword || newPassword.length < 8) {
       return NextResponse.json(
-        { error: "New password must be at least 4 characters long" },
+        { error: "New password must be at least 8 characters long" },
         { status: 400 }
       );
     }

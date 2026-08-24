@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRequestContext } from "@cloudflare/next-on-pages";
 import { verifySessionToken, getSessionSecret, SESSION_COOKIE_NAME } from "../../../../lib/auth";
 import { getDB, insertTransactions } from "../../../../lib/db";
+import { validateCsrfToken, csrfErrorResponse } from "../../../../lib/csrf";
 
 export const runtime = "edge";
 
@@ -36,6 +37,11 @@ export async function POST(request: NextRequest) {
     // 1. Authentication
     if (!(await requireAuth(request))) {
       return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    }
+
+    // 1b. CSRF
+    if (!validateCsrfToken(request)) {
+      return csrfErrorResponse();
     }
 
     // 2. Rate Limiting

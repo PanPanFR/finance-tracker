@@ -4,7 +4,9 @@ import React, { useState } from "react";
 import Navigation from "../../components/Navigation";
 import { useAuth } from "../../contexts/AuthContext";
 import PasswordGate from "../../components/PasswordGate";
+import ThemeToggle from "../../components/ThemeToggle";
 import { useToast } from "../../components/Toast";
+import { apiFetch } from "../../lib/client-api";
 import {
   SettingsIcon,
   ShieldCheckIcon,
@@ -12,7 +14,23 @@ import {
   EyeOffIcon,
   RefreshCwIcon,
   LockIcon,
+  SunIcon,
 } from "../../components/Icons";
+
+const MIN_PASSWORD_LENGTH = 8;
+
+/** 0 (empty) … 4 (strong) */
+function getPasswordScore(password: string): number {
+  if (!password) return 0;
+  let score = 0;
+  if (password.length >= MIN_PASSWORD_LENGTH) score++;
+  if (password.length >= 12) score++;
+  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score++;
+  if (/\d/.test(password) && /[^A-Za-z0-9]/.test(password)) score++;
+  return Math.min(score, 4);
+}
+
+const STRENGTH_LABELS = ["Too short", "Weak", "Fair", "Good", "Strong"];
 
 export default function SettingsPage() {
   const { isAuthenticated, loading: authLoading } = useAuth();
@@ -24,6 +42,8 @@ export default function SettingsPage() {
   const [error, setError] = useState("");
   const { success } = useToast();
 
+  const strengthScore = getPasswordScore(newPassword);
+
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!oldPassword || !newPassword) return;
@@ -32,11 +52,10 @@ export default function SettingsPage() {
     setError("");
 
     try {
-      const res = await fetch("/api/auth/change-password", {
+      const res = await apiFetch("/api/auth/change-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ oldPassword, newPassword }),
-        credentials: "include",
       });
 
       if (!res.ok) {
@@ -56,7 +75,7 @@ export default function SettingsPage() {
 
   const handleLogout = async () => {
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      await apiFetch("/api/auth/logout", { method: "POST" });
       window.location.reload();
     } catch (error) {
       console.error("Logout failed:", error);
@@ -65,7 +84,7 @@ export default function SettingsPage() {
 
   if (authLoading) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-app)", color: "var(--text-muted)", fontSize: "0.875rem" }}>
+      <div className="auth-loading-screen">
         Loading settings...
       </div>
     );
@@ -82,15 +101,15 @@ export default function SettingsPage() {
       <main className="app-container" style={{ marginTop: "1.5rem", maxWidth: "800px" }}>
         {/* Page Header */}
         <div style={{ marginBottom: "1.5rem" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.2rem" }}>
+          <div className="page-title-group">
             <div className="icon-badge icon-badge-primary" style={{ width: "2rem", height: "2rem" }}>
               <SettingsIcon size={16} />
             </div>
-            <h1 style={{ fontSize: "1.25rem", fontWeight: 800, letterSpacing: "-0.02em", color: "var(--text-primary)" }}>
+            <h1 className="page-title">
               Vault Security &amp; Settings
             </h1>
           </div>
-          <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+          <p className="page-subtitle">
             Configure your master access password and manage local session encryption.
           </p>
         </div>
@@ -110,12 +129,13 @@ export default function SettingsPage() {
 
             <form onSubmit={handlePasswordSubmit}>
               <div className="form-group">
-                <label className="form-label">Current Master Password</label>
+                <label className="form-label" htmlFor="current-password">Current Master Password</label>
                 <div style={{ position: "relative" }}>
                   <input
+                    id="current-password"
                     type={showOld ? "text" : "password"}
                     className="input-text"
-                    style={{ paddingRight: "2.5rem" }}
+                    style={{ paddingRight: "2.75rem" }}
                     value={oldPassword}
                     onChange={(e) => setOldPassword(e.target.value)}
                     placeholder="Enter current password"
@@ -124,8 +144,8 @@ export default function SettingsPage() {
                   <button
                     type="button"
                     onClick={() => setShowOld(!showOld)}
-                    style={{ position: "absolute", right: "0.75rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", display: "flex", alignItems: "center" }}
-                    aria-label={showOld ? "Hide password" : "Show password"}
+                    className="input-visibility-toggle"
+                    aria-label={showOld ? "Hide current password" : "Show current password"}
                   >
                     {showOld ? <EyeOffIcon size={15} /> : <EyeIcon size={15} />}
                   </button>
@@ -133,31 +153,62 @@ export default function SettingsPage() {
               </div>
 
               <div className="form-group">
-                <label className="form-label">New Master Password (Min. 4 chars)</label>
+                <label className="form-label" htmlFor="new-password">New Master Password (Min. {MIN_PASSWORD_LENGTH} chars)</label>
                 <div style={{ position: "relative" }}>
                   <input
+                    id="new-password"
                     type={showNew ? "text" : "password"}
                     className="input-text"
-                    style={{ paddingRight: "2.5rem" }}
+                    style={{ paddingRight: "2.75rem" }}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="Enter new password"
                     required
-                    minLength={4}
+                    minLength={MIN_PASSWORD_LENGTH}
                   />
                   <button
                     type="button"
                     onClick={() => setShowNew(!showNew)}
-                    style={{ position: "absolute", right: "0.75rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", display: "flex", alignItems: "center" }}
-                    aria-label={showNew ? "Hide password" : "Show password"}
+                    className="input-visibility-toggle"
+                    aria-label={showNew ? "Hide new password" : "Show new password"}
                   >
                     {showNew ? <EyeOffIcon size={15} /> : <EyeIcon size={15} />}
                   </button>
                 </div>
+
+                {/* Password strength meter */}
+                {newPassword && (
+                  <div style={{ marginTop: "0.6rem" }} aria-live="polite">
+                    <div style={{ display: "flex", gap: "0.25rem" }} aria-hidden="true">
+                      {[1, 2, 3, 4].map((seg) => (
+                        <span
+                          key={seg}
+                          style={{
+                            flex: 1,
+                            height: "0.25rem",
+                            borderRadius: "var(--radius-full)",
+                            background:
+                              strengthScore >= seg
+                                ? seg <= 1
+                                  ? "var(--color-expense)"
+                                  : seg === 2
+                                    ? "#f59e0b"
+                                    : "var(--income-text)"
+                                : "var(--bg-card-hover)",
+                            transition: "background 0.2s ease",
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <span className="page-subtitle" style={{ fontSize: "0.6875rem", display: "block", marginTop: "0.25rem" }}>
+                      Strength: {STRENGTH_LABELS[strengthScore]}
+                    </span>
+                  </div>
+                )}
               </div>
 
               {error && (
-                <div style={{ padding: "0.6rem 0.75rem", background: "var(--color-expense-bg)", border: "1px solid var(--color-expense-border)", borderRadius: "var(--radius-md)", color: "var(--color-expense)", fontSize: "0.75rem", marginBottom: "1rem" }}>
+                <div className="form-error-box">
                   {error}
                 </div>
               )}
@@ -170,7 +221,7 @@ export default function SettingsPage() {
                 >
                   {loading ? (
                     <>
-                      <RefreshCwIcon size={14} className="icon-wrap" />
+                      <RefreshCwIcon size={14} className="icon-wrap spin-animation" />
                       <span>Updating...</span>
                     </>
                   ) : (
@@ -182,6 +233,23 @@ export default function SettingsPage() {
                 </button>
               </div>
             </form>
+          </div>
+
+          {/* Appearance Panel */}
+          <div className="panel">
+            <div className="panel-header">
+              <div>
+                <h2 className="panel-title">
+                  <SunIcon size={16} color="#818cf8" />
+                  <span>Appearance</span>
+                </h2>
+                <p className="panel-subtitle">Choose between light and dark theme</p>
+              </div>
+              <ThemeToggle />
+            </div>
+            <p className="page-subtitle">
+              Your preference is saved on this device. When no choice is stored, the app follows your system setting.
+            </p>
           </div>
 
           {/* System & Vault Status Panel */}
@@ -196,31 +264,31 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "0.75rem", marginBottom: "1.25rem" }}>
-              <div style={{ background: "var(--bg-input)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", padding: "0.875rem" }}>
-                <span style={{ fontSize: "0.6875rem", color: "var(--text-muted)", display: "block" }}>Vault Status</span>
-                <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "#34d399", display: "inline-flex", alignItems: "center", gap: "0.35rem", marginTop: "0.2rem" }}>
+            <div className="info-grid">
+              <div className="info-tile">
+                <span className="info-tile-label">Vault Status</span>
+                <span className="info-tile-value" style={{ color: "var(--income-text)", display: "inline-flex", alignItems: "center", gap: "0.35rem", marginTop: "0.2rem" }}>
                   Active &amp; Locked
                 </span>
               </div>
 
-              <div style={{ background: "var(--bg-input)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", padding: "0.875rem" }}>
-                <span style={{ fontSize: "0.6875rem", color: "var(--text-muted)", display: "block" }}>Encryption Type</span>
-                <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "var(--text-primary)", display: "block", marginTop: "0.2rem" }}>
+              <div className="info-tile">
+                <span className="info-tile-label">Encryption Type</span>
+                <span className="info-tile-value">
                   PBKDF2 / SHA-256
                 </span>
               </div>
 
-              <div style={{ background: "var(--bg-input)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-md)", padding: "0.875rem" }}>
-                <span style={{ fontSize: "0.6875rem", color: "var(--text-muted)", display: "block" }}>Storage Engine</span>
-                <span style={{ fontSize: "0.875rem", fontWeight: 700, color: "var(--text-primary)", display: "block", marginTop: "0.2rem" }}>
+              <div className="info-tile">
+                <span className="info-tile-label">Storage Engine</span>
+                <span className="info-tile-value">
                   Cloudflare D1 SQL
                 </span>
               </div>
             </div>
 
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "1rem", borderTop: "1px solid var(--border-subtle)" }}>
-              <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>End active session on this device</span>
+            <div className="vault-footer-row">
+              <span className="page-subtitle">End active session on this device</span>
               <button
                 type="button"
                 onClick={handleLogout}

@@ -11,7 +11,11 @@ const SESSION_COOKIE_NAME = "ft_session";
 const SESSION_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 const encoder = new TextEncoder();
 
-/** Get session secret from Cloudflare context, environment, or fallback */
+/**
+ * Get the session secret from the Cloudflare request context or environment.
+ * REQUIRED — there is deliberately no hardcoded fallback, otherwise anyone
+ * reading the bundle could forge session tokens.
+ */
 export function getSessionSecret(): string {
   try {
     const { env } = getRequestContext();
@@ -25,8 +29,10 @@ export function getSessionSecret(): string {
     return process.env.SESSION_SECRET;
   }
 
-  // Development/default fallback secret
-  return "dev-secret-key-finance-tracker-cloudflare-pages-personal-use";
+  throw new Error(
+    "SESSION_SECRET is not configured. Set it as an environment variable " +
+      "(Cloudflare Pages project settings for production, .env.local for local development)."
+  );
 }
 
 /** Hash a password with PBKDF2 (SHA-256, 100k iterations) → hex string */

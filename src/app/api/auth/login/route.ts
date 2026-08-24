@@ -7,11 +7,16 @@ import {
   SESSION_EXPIRY_MS,
 } from "../../../../lib/auth";
 import { getDB, getSetting } from "../../../../lib/db";
+import { validateCsrfToken, csrfErrorResponse } from "../../../../lib/csrf";
 
 export const runtime = "edge";
 
 export async function POST(request: NextRequest) {
   try {
+    if (!validateCsrfToken(request)) {
+      return csrfErrorResponse();
+    }
+
     const { password } = await request.json();
 
     if (!password || typeof password !== "string") {

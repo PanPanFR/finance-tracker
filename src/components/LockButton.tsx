@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { LockIcon, RefreshCwIcon } from "./Icons";
+import { apiFetch } from "../lib/client-api";
 
 interface LockButtonProps {
   onLogout?: () => void;
@@ -13,7 +14,7 @@ export default function LockButton({ onLogout }: LockButtonProps) {
   const handleLogout = async () => {
     setLoading(true);
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      await apiFetch("/api/auth/logout", { method: "POST" });
       onLogout?.();
       window.location.reload();
     } catch (error) {
@@ -32,7 +33,7 @@ export default function LockButton({ onLogout }: LockButtonProps) {
       aria-label="Lock application"
     >
       {loading ? (
-        <RefreshCwIcon className="icon-wrap" size={14} style={{ animation: "spin 1s linear infinite" }} />
+        <RefreshCwIcon className="icon-wrap spin-animation" size={14} />
       ) : (
         <LockIcon className="icon-wrap" size={14} />
       )}

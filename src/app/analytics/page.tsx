@@ -4,6 +4,7 @@ import React, { useEffect, useState, useCallback } from "react";
 import Navigation from "../../components/Navigation";
 import { useAuth } from "../../contexts/AuthContext";
 import PasswordGate from "../../components/PasswordGate";
+import { SkeletonList } from "../../components/Skeleton";
 import { useToast } from "../../components/Toast";
 import {
   TrendingUpIcon,
@@ -19,6 +20,17 @@ type Transaction = {
   category?: string;
   type: "income" | "expense";
 };
+
+const BAR_COLORS = [
+  "#6366f1",
+  "#f43f5e",
+  "#10b981",
+  "#f59e0b",
+  "#8b5cf6",
+  "#ec4899",
+  "#06b6d4",
+  "#84cc16",
+];
 
 export default function AnalyticsPage() {
   const { isAuthenticated, loading: authLoading } = useAuth();
@@ -94,9 +106,52 @@ export default function AnalyticsPage() {
     }))
     .sort((a, b) => b.amount - a.amount);
 
+  // Daily expense totals for the last 30 days (trend chart)
+  const TREND_DAYS = 30;
+  const dailyTotals: { ymd: string; label: string; total: number }[] = [];
+  for (let i = TREND_DAYS - 1; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const ymd = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(d);
+    dailyTotals.push({
+      ymd,
+      label: new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Jakarta", month: "short", day: "numeric" }).format(d),
+      total: 0,
+    });
+  }
+  const ymdIndex = new Map(dailyTotals.map((d, idx) => [d.ymd, idx]));
+  transactions
+    .filter((t) => t.type === "expense" && !isLoading)
+    .forEach((t) => {
+      if (!t.created_at) return;
+      const parsed = new Date(t.created_at);
+      if (isNaN(parsed.getTime())) return;
+      const ymd = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jakarta" }).format(parsed);
+      const idx = ymdIndex.get(ymd);
+      if (idx !== undefined) dailyTotals[idx].total += t.amount || 0;
+    });
+
+  const trendMax = Math.max(...dailyTotals.map((d) => d.total), 1);
+  const trendTotal = dailyTotals.reduce((sum, d) => sum + d.total, 0);
+  const peakDay = dailyTotals.reduce((peak, d) => (d.total > peak.total ? d : peak), dailyTotals[0]);
+
+  // SVG geometry (viewBox 600x160, padding 6/10)
+  const CHART_W = 600;
+  const CHART_H = 160;
+  const chartPoints = dailyTotals.map((d, idx) => {
+    const x = (idx / Math.max(TREND_DAYS - 1, 1)) * (CHART_W - 12) + 6;
+    const y = CHART_H - 10 - (d.total / trendMax) * (CHART_H - 24);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const trendLinePoints = chartPoints.join(" ");
+  const trendAreaPath =
+    `M ${chartPoints[0] ?? `6,${CHART_H - 10}`} L ` +
+    chartPoints.join(" L ") +
+    ` L ${(CHART_W - 6).toFixed(1)},${CHART_H - 10} L 6,${CHART_H - 10} Z`;
+
   if (authLoading) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-app)", color: "var(--text-muted)", fontSize: "0.875rem" }}>
+      <div className="auth-loading-screen">
         Loading analytics...
       </div>
     );
@@ -113,17 +168,17 @@ export default function AnalyticsPage() {
       <main className="app-container" style={{ marginTop: "1.5rem" }}>
         {/* Page Header with Time Range Switcher */}
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginBottom: "1.5rem" }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.75rem" }}>
+          <div className="page-header-row" style={{ marginBottom: 0 }}>
             <div>
-              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.2rem" }}>
+              <div className="page-title-group">
                 <div className="icon-badge icon-badge-primary" style={{ width: "2rem", height: "2rem" }}>
                   <TrendingUpIcon size={16} />
                 </div>
-                <h1 style={{ fontSize: "1.25rem", fontWeight: 800, letterSpacing: "-0.02em", color: "var(--text-primary)" }}>
+                <h1 className="page-title">
                   Financial Analytics &amp; Breakdown
                 </h1>
               </div>
-              <p style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+              <p className="page-subtitle">
                 Track your savings performance, category distributions, and expense ratios.
               </p>
             </div>
@@ -132,12 +187,14 @@ export default function AnalyticsPage() {
               <button
                 onClick={() => setPeriod("this-month")}
                 className={`segmented-btn ${period === "this-month" ? "active" : ""}`}
+                aria-pressed={period === "this-month"}
               >
                 This Month
               </button>
               <button
                 onClick={() => setPeriod("all")}
                 className={`segmented-btn ${period === "all" ? "active" : ""}`}
+                aria-pressed={period === "all"}
               >
                 All Time
               </button>
@@ -146,10 +203,10 @@ export default function AnalyticsPage() {
         </div>
 
         {/* Analytics Top KPI Grid */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem", marginBottom: "1.5rem" }}>
-          <div className="panel" style={{ padding: "1.25rem" }}>
+        <div className="kpi-grid">
+          <div className="panel stat-card">
             <span className="card-eyebrow">Total Inflow</span>
-            <div style={{ fontSize: "1.5rem", fontWeight: 800, fontFamily: "var(--font-mono)", color: "#34d399", marginTop: "0.35rem" }}>
+            <div className="stat-card-value" style={{ color: "var(--income-text)" }}>
               +Rp {totalIncome.toLocaleString("id-ID")}
             </div>
             <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", marginTop: "0.5rem" }}>
@@ -157,9 +214,9 @@ export default function AnalyticsPage() {
             </div>
           </div>
 
-          <div className="panel" style={{ padding: "1.25rem" }}>
+          <div className="panel stat-card">
             <span className="card-eyebrow">Total Outflow</span>
-            <div style={{ fontSize: "1.5rem", fontWeight: 800, fontFamily: "var(--font-mono)", color: "#fb7185", marginTop: "0.35rem" }}>
+            <div className="stat-card-value" style={{ color: "var(--expense-text)" }}>
               -Rp {totalExpense.toLocaleString("id-ID")}
             </div>
             <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", marginTop: "0.5rem" }}>
@@ -167,15 +224,68 @@ export default function AnalyticsPage() {
             </div>
           </div>
 
-          <div className="panel" style={{ padding: "1.25rem" }}>
+          <div className="panel stat-card">
             <span className="card-eyebrow">Net Savings</span>
-            <div style={{ fontSize: "1.5rem", fontWeight: 800, fontFamily: "var(--font-mono)", color: netSavings >= 0 ? "var(--color-primary)" : "#fb7185", marginTop: "0.35rem" }}>
+            <div className="stat-card-value" style={{ color: netSavings >= 0 ? "var(--color-primary)" : "var(--expense-text)" }}>
               {netSavings >= 0 ? "+" : ""}Rp {netSavings.toLocaleString("id-ID")}
             </div>
             <div style={{ fontSize: "0.6875rem", color: "var(--text-muted)", marginTop: "0.5rem" }}>
               Savings Rate: <strong style={{ color: "var(--text-primary)" }}>{savingsRate}%</strong>
             </div>
           </div>
+        </div>
+
+        {/* Daily Expense Trend Chart */}
+        <div className="panel" style={{ marginBottom: "1.5rem" }}>
+          <div className="panel-header">
+            <div>
+              <h2 className="panel-title">
+                <TrendingUpIcon size={16} color="#818cf8" />
+                <span>Daily Expense Trend</span>
+              </h2>
+              <p className="panel-subtitle">Spending per day over the last 30 days</p>
+            </div>
+          </div>
+
+          {isLoading ? (
+            <SkeletonList count={3} label="Calculating expense trends..." />
+          ) : trendTotal === 0 ? (
+            <p className="empty-state-desc" style={{ margin: 0 }}>
+              No expenses recorded in the last 30 days.
+            </p>
+          ) : (
+            <>
+              <svg
+                className="chart-svg"
+                viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+                role="img"
+                aria-label={`Daily expenses for the last 30 days, totaling Rp ${trendTotal.toLocaleString("id-ID")}. Peak day was ${peakDay.label} at Rp ${peakDay.total.toLocaleString("id-ID")}.`}
+              >
+                {/* horizontal grid lines */}
+                {[0.25, 0.5, 0.75].map((frac) => (
+                  <line
+                    key={frac}
+                    x1="6"
+                    x2={CHART_W - 6}
+                    y1={CHART_H - 10 - frac * (CHART_H - 24)}
+                    y2={CHART_H - 10 - frac * (CHART_H - 24)}
+                    stroke="var(--border-subtle)"
+                    strokeDasharray="4 4"
+                  />
+                ))}
+                {/* baseline */}
+                <line x1="6" x2={CHART_W - 6} y1={CHART_H - 10} y2={CHART_H - 10} stroke="var(--border-medium)" />
+                {/* area + line */}
+                <path d={trendAreaPath} fill="rgba(99, 102, 241, 0.15)" stroke="none" />
+                <polyline points={trendLinePoints} fill="none" stroke="#6366f1" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+              </svg>
+              <div className="chart-footer-note">
+                <span>{dailyTotals[0]?.label}</span>
+                <span>Peak: {peakDay.label} · Rp {peakDay.total.toLocaleString("id-ID")}</span>
+                <span>{dailyTotals[dailyTotals.length - 1]?.label}</span>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Analytics Breakdown Workspace Grid */}
@@ -193,9 +303,7 @@ export default function AnalyticsPage() {
             </div>
 
             {isLoading ? (
-              <div style={{ padding: "2rem", textAlign: "center", color: "var(--text-muted)", fontSize: "0.8125rem" }}>
-                Calculating category metrics...
-              </div>
+              <SkeletonList count={4} label="Calculating category metrics..." />
             ) : categoryList.length === 0 ? (
               <div className="empty-state">
                 <p className="empty-state-desc">No expense records found for the selected period.</p>
@@ -203,17 +311,7 @@ export default function AnalyticsPage() {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
                 {categoryList.map((item, idx) => {
-                  const colors = [
-                    "#6366f1",
-                    "#f43f5e",
-                    "#10b981",
-                    "#f59e0b",
-                    "#8b5cf6",
-                    "#ec4899",
-                    "#06b6d4",
-                    "#84cc16",
-                  ];
-                  const barColor = colors[idx % colors.length];
+                  const barColor = BAR_COLORS[idx % BAR_COLORS.length];
 
                   return (
                     <div key={item.category} className="analytics-bar-row">
@@ -230,7 +328,14 @@ export default function AnalyticsPage() {
                         </div>
                       </div>
 
-                      <div className="analytics-bar-track">
+                      <div
+                        className="analytics-bar-track"
+                        role="progressbar"
+                        aria-valuenow={item.percentage}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-label={`${item.category}: ${item.percentage}% of expenses`}
+                      >
                         <div
                           className="analytics-bar-fill"
                           style={{

@@ -2,10 +2,26 @@
 
 import React, { useState } from "react";
 import { LockIcon, UnlockIcon, SparklesIcon, EyeIcon, EyeOffIcon, RefreshCwIcon, ShieldCheckIcon } from "./Icons";
+import { apiFetch } from "../lib/client-api";
 
 interface PasswordGateProps {
   onSuccess: () => void;
 }
+
+const MIN_PASSWORD_LENGTH = 8;
+
+/** 0 (empty) … 4 (strong) */
+function getPasswordScore(password: string): number {
+  if (!password) return 0;
+  let score = 0;
+  if (password.length >= MIN_PASSWORD_LENGTH) score++;
+  if (password.length >= 12) score++;
+  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score++;
+  if (/\d/.test(password) && /[^A-Za-z0-9]/.test(password)) score++;
+  return Math.min(score, 4);
+}
+
+const STRENGTH_LABELS = ["Too short", "Weak", "Fair", "Good", "Strong"];
 
 export default function PasswordGate({ onSuccess }: PasswordGateProps) {
   const [password, setPassword] = useState("");
@@ -13,6 +29,8 @@ export default function PasswordGate({ onSuccess }: PasswordGateProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [isSetupMode, setIsSetupMode] = useState(false);
+
+  const strengthScore = getPasswordScore(password);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,7 +42,7 @@ export default function PasswordGate({ onSuccess }: PasswordGateProps) {
     try {
       if (isSetupMode) {
         // Setup Mode (First Time)
-        const res = await fetch("/api/auth/setup", {
+        const res = await apiFetch("/api/auth/setup", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ password }),
@@ -36,7 +54,7 @@ export default function PasswordGate({ onSuccess }: PasswordGateProps) {
         }
       } else {
         // Login Mode
-        const res = await fetch("/api/auth/login", {
+        const res = await apiFetch("/api/auth/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ password }),
@@ -62,7 +80,7 @@ export default function PasswordGate({ onSuccess }: PasswordGateProps) {
   };
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "1.5rem", background: "var(--bg-app)" }}>
+    <div className="auth-loading-screen" style={{ padding: "1.5rem" }}>
       <div style={{ width: "100%", maxWidth: "420px", background: "var(--bg-card)", border: "1px solid var(--border-subtle)", borderRadius: "var(--radius-2xl)", padding: "2.25rem", boxShadow: "0 24px 48px rgba(0,0,0,0.65)" }}>
         {/* Top Vault Icon */}
         <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
@@ -72,7 +90,7 @@ export default function PasswordGate({ onSuccess }: PasswordGateProps) {
           <h1 style={{ fontSize: "1.375rem", fontWeight: 800, letterSpacing: "-0.02em", color: "var(--text-primary)" }}>
             {isSetupMode ? "Initialize Master Vault" : "Vault Access"}
           </h1>
-          <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.35rem", lineHeight: 1.5 }}>
+          <p className="page-subtitle" style={{ marginTop: "0.35rem", lineHeight: 1.5 }}>
             {isSetupMode
               ? "Create a secure master password to encrypt your personal finance records"
               : "Enter master password to unlock your AI Finance Tracker"}
@@ -85,7 +103,11 @@ export default function PasswordGate({ onSuccess }: PasswordGateProps) {
               <label className="form-label" htmlFor="master-password" style={{ marginBottom: 0 }}>
                 {isSetupMode ? "Create Password" : "Password"}
               </label>
-              {isSetupMode && <span style={{ fontSize: "0.6875rem", color: "var(--text-muted)" }}>Min. 4 chars</span>}
+              {isSetupMode && (
+                <span className="page-subtitle" style={{ fontSize: "0.6875rem" }}>
+                  Min. {MIN_PASSWORD_LENGTH} chars
+                </span>
+              )}
             </div>
 
             <div style={{ position: "relative" }}>
@@ -93,26 +115,57 @@ export default function PasswordGate({ onSuccess }: PasswordGateProps) {
                 id="master-password"
                 type={showPassword ? "text" : "password"}
                 className="input-text"
-                style={{ paddingRight: "2.5rem" }}
+                style={{ paddingRight: "2.75rem" }}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
                 required
+                minLength={MIN_PASSWORD_LENGTH}
                 autoFocus
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                style={{ position: "absolute", right: "0.75rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", display: "flex", alignItems: "center" }}
+                className="input-visibility-toggle"
                 aria-label={showPassword ? "Hide password" : "Show password"}
               >
                 {showPassword ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
               </button>
             </div>
+
+            {/* Password strength meter (setup mode only) */}
+            {isSetupMode && (
+              <div style={{ marginTop: "0.6rem" }} aria-live="polite">
+                <div style={{ display: "flex", gap: "0.25rem" }} aria-hidden="true">
+                  {[1, 2, 3, 4].map((seg) => (
+                    <span
+                      key={seg}
+                      style={{
+                        flex: 1,
+                        height: "0.25rem",
+                        borderRadius: "var(--radius-full)",
+                        background:
+                          strengthScore >= seg
+                            ? seg <= 1
+                              ? "var(--color-expense)"
+                              : seg === 2
+                                ? "#f59e0b"
+                                : "var(--income-text)"
+                            : "var(--bg-card-hover)",
+                        transition: "background 0.2s ease",
+                      }}
+                    />
+                  ))}
+                </div>
+                <span className="page-subtitle" style={{ fontSize: "0.6875rem", display: "block", marginTop: "0.25rem" }}>
+                  Strength: {STRENGTH_LABELS[strengthScore]}
+                </span>
+              </div>
+            )}
           </div>
 
           {error && (
-            <div style={{ padding: "0.6rem 0.75rem", background: "var(--color-expense-bg)", border: "1px solid var(--color-expense-border)", borderRadius: "var(--radius-md)", color: "var(--color-expense)", fontSize: "0.75rem", marginBottom: "1rem" }}>
+            <div className="form-error-box">
               {error}
             </div>
           )}
@@ -125,7 +178,7 @@ export default function PasswordGate({ onSuccess }: PasswordGateProps) {
           >
             {loading ? (
               <>
-                <RefreshCwIcon size={16} className="icon-wrap" />
+                <RefreshCwIcon size={16} className="icon-wrap spin-animation" />
                 <span>Verifying...</span>
               </>
             ) : isSetupMode ? (

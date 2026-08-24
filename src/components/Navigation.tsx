@@ -5,7 +5,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import TransactionForm from "./TransactionForm";
 import LockButton from "./LockButton";
+import ThemeToggle from "./ThemeToggle";
 import { useToast } from "./Toast";
+import { apiFetch } from "../lib/client-api";
 import {
   WalletIcon,
   ReceiptIcon,
@@ -82,14 +84,13 @@ export default function Navigation() {
     category?: string;
   }) => {
     try {
-      const res = await fetch("/api/transactions", {
+      const res = await apiFetch("/api/transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...transactionData,
           created_at: new Date().toISOString(),
         }),
-        credentials: "include",
       });
 
       if (!res.ok) throw new Error("Insert failed");
@@ -143,6 +144,7 @@ export default function Navigation() {
               <PlusIcon size={14} className="icon-wrap" />
               <span>Add</span>
             </button>
+            <ThemeToggle />
             <LockButton />
           </div>
         </div>

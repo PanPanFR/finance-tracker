@@ -7,6 +7,7 @@ import PasswordGate from "../../components/PasswordGate";
 import { scanReceipt } from "../../lib/ocr";
 import { askReport } from "../../lib/aiReport";
 import { useToast } from "../../components/Toast";
+import { apiFetch } from "../../lib/client-api";
 import {
   SparklesIcon,
   SendIcon,
@@ -40,11 +41,10 @@ export default function AiCopilotPage() {
 
     setLoadingAdd(true);
     try {
-      const res = await fetch("/api/ai/parse", {
+      const res = await apiFetch("/api/ai/parse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ input: textToSend, insert: true }),
-        credentials: "include",
       });
 
       if (!res.ok) {
@@ -78,11 +78,10 @@ export default function AiCopilotPage() {
     try {
       const text = await scanReceipt(file);
       setOcrProgress("Parsing line items and amounts with AI...");
-      const res = await fetch("/api/ai/parse", {
+      const res = await apiFetch("/api/ai/parse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ input: text, insert: true, ocrNow: true }),
-        credentials: "include",
       });
 
       if (!res.ok) {
@@ -129,7 +128,7 @@ export default function AiCopilotPage() {
 
   if (authLoading) {
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-app)", color: "var(--text-muted)", fontSize: "0.875rem" }}>
+      <div className="auth-loading-screen">
         Loading session...
       </div>
     );
@@ -181,6 +180,7 @@ export default function AiCopilotPage() {
                   onChange={(e) => setInput(e.target.value)}
                   placeholder="e.g. coffee 25k, lunch 45k yesterday, salary 5jt"
                   className="input-text"
+                  aria-label="Describe a transaction in natural language"
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && input.trim()) handleAiTextSubmit();
                   }}
@@ -220,7 +220,7 @@ export default function AiCopilotPage() {
             </div>
 
             {/* 2. OCR Receipt Scanner Card */}
-            <div className="panel">
+            <div className="panel" id="ocr-scanner">
               <div className="panel-header" style={{ marginBottom: "1rem" }}>
                 <div>
                   <h2 className="panel-title">
@@ -282,6 +282,7 @@ export default function AiCopilotPage() {
                 onChange={(e) => setQuestion(e.target.value)}
                 placeholder="e.g. Total expense this month? Where do I spend the most?"
                 className="input-text"
+                aria-label="Ask a financial question"
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && question.trim()) handleAskReport();
                 }}

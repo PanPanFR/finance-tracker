@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useModalAccessibility } from "../hooks/useModalAccessibility";
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -23,13 +24,23 @@ export default function ConfirmModal({
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
+  const dialogRef = useModalAccessibility<HTMLDivElement>(isOpen, onCancel);
+
   if (!isOpen) return null;
 
   return (
     <div className="modal-overlay" onClick={onCancel}>
-      <div className="modal-dialog" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        className="modal-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-modal-title"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="modal-header-row">
-          <h3 className="modal-title-text">{title}</h3>
+          <h3 id="confirm-modal-title" className="modal-title-text">{title}</h3>
           <button onClick={onCancel} className="toast-close" aria-label="Close dialog">
             ✕
           </button>
@@ -46,6 +57,7 @@ export default function ConfirmModal({
           <button
             type="button"
             onClick={onConfirm}
+            autoFocus
             className={`btn ${isDestructive ? "btn-danger" : "btn-primary"}`}
           >
             {confirmText}
