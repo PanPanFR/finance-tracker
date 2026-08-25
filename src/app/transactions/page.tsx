@@ -264,7 +264,7 @@ export default function TransactionsPage() {
   if (authLoading) {
     return (
       <div className="auth-loading-screen">
-        Loading ledger...
+        Loading records...
       </div>
     );
   }
@@ -286,7 +286,7 @@ export default function TransactionsPage() {
                 <ReceiptIcon size={16} />
               </div>
               <h1 className="page-title">
-                Transaction Ledger ({filtered.length})
+                Transaction Records ({filtered.length})
               </h1>
             </div>
             <p className="page-subtitle">
@@ -418,7 +418,7 @@ export default function TransactionsPage() {
           </div>
         </section>
 
-        {/* Ledger List */}
+        {/* Records List */}
         <section>
           {isLoading ? (
             <SkeletonList count={6} label="Loading transactions..." />

@@ -123,7 +123,7 @@ export default function SettingsPage() {
                   <ShieldCheckIcon size={16} color="#818cf8" />
                   <span>Update Master Password</span>
                 </h2>
-                <p className="panel-subtitle">Change the password required to unlock your finance ledger</p>
+                <p className="panel-subtitle">Change the password required to unlock your finance records</p>
               </div>
             </div>
 

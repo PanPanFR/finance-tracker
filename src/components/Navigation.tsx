@@ -36,7 +36,7 @@ export default function Navigation() {
     },
     {
       href: "/transactions",
-      label: "Ledger",
+      label: "Records",
       icon: ReceiptIcon,
       desc: "Transactions history & search",
     },
@@ -116,7 +116,7 @@ export default function Navigation() {
       if (!res.ok) throw new Error("Insert failed");
       success("Transaction recorded successfully!");
       setIsAddModalOpen(false);
-      // Trigger soft page refresh if on dashboard or ledger
+      // Trigger soft page refresh if on dashboard or records page
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event("transaction-added"));
       }

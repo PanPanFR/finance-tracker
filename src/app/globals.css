@@ -212,7 +212,13 @@ html, body {
 
 @media (min-width: 640px) {
   .app-container {
-    padding: 0 1.5rem;
+    padding: 0 2rem;
+  }
+}
+
+@media (min-width: 1100px) {
+  .app-container {
+    padding: 0 2.5rem;
   }
 }
 
@@ -252,7 +258,13 @@ html, body {
 
 @media (min-width: 640px) {
   .navbar-inner {
-    padding: 0 1.5rem;
+    padding: 0 2rem;
+  }
+}
+
+@media (min-width: 1100px) {
+  .navbar-inner {
+    padding: 0 2.5rem;
   }
 }
 
@@ -850,6 +862,12 @@ html, body {
   width: 100%;
 }
 
+@media (min-width: 640px) {
+  .hero-grid {
+    gap: 1.25rem;
+  }
+}
+
 .hero-card-main {
   grid-column: span 12;
   background: var(--bg-card);
@@ -863,6 +881,18 @@ html, body {
   position: relative;
   overflow: hidden;
   min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .hero-card-main {
+    padding: 1.75rem;
+  }
+}
+
+@media (min-width: 1100px) {
+  .hero-card-main {
+    padding: 2rem;
+  }
 }
 
 @media (min-width: 900px) {
@@ -882,6 +912,18 @@ html, body {
   justify-content: space-between;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .hero-card-metric {
+    padding: 1.75rem;
+  }
+}
+
+@media (min-width: 1100px) {
+  .hero-card-metric {
+    padding: 2rem;
+  }
 }
 
 @media (min-width: 600px) {
@@ -972,6 +1014,12 @@ html, body {
   width: 100%;
 }
 
+@media (min-width: 640px) {
+  .quick-actions-grid {
+    gap: 1rem;
+  }
+}
+
 .quick-action-tile {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
@@ -985,6 +1033,13 @@ html, body {
   text-decoration: none;
   transition: all 0.15s ease;
   min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .quick-action-tile {
+    padding: 1.5rem 1.25rem;
+    gap: 0.75rem;
+  }
 }
 
 .quick-action-tile:hover {
@@ -1019,7 +1074,13 @@ html, body {
 
 @media (min-width: 640px) {
   .panel {
-    padding: 1.5rem;
+    padding: 1.75rem;
+  }
+}
+
+@media (min-width: 1100px) {
+  .panel {
+    padding: 2rem;
   }
 }
 

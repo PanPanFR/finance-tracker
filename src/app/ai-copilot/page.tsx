@@ -54,7 +54,7 @@ export default function AiCopilotPage() {
 
       const data = await res.json();
       const count = data.inserted || (data.result ? data.result.length : 1);
-      success(`Successfully recorded ${count} transaction${count > 1 ? "s" : ""} to your ledger!`);
+      success(`Successfully recorded ${count} transaction${count > 1 ? "s" : ""}!`);
       setInput("");
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event("transaction-added"));
@@ -337,7 +337,7 @@ export default function AiCopilotPage() {
 
             <div style={{ display: "flex", alignItems: "center", gap: "0.35rem", marginTop: "1.25rem", paddingTop: "0.75rem", borderTop: "1px solid var(--border-subtle)", fontSize: "0.6875rem", color: "var(--text-dim)" }}>
               <ShieldCheckIcon size={12} color="#10b981" />
-              <span>Responses generated from your encrypted local ledger</span>
+              <span>Responses generated from your encrypted local data</span>
             </div>
           </div>
         </div>

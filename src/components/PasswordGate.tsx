@@ -189,7 +189,7 @@ export default function PasswordGate({ onSuccess }: PasswordGateProps) {
             ) : (
               <>
                 <UnlockIcon size={16} className="icon-wrap" />
-                <span>Unlock Ledger</span>
+                <span>Unlock Records</span>
               </>
             )}
           </button>

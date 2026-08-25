@@ -360,7 +360,7 @@ export default function Home() {
               <ReceiptIcon size={18} />
             </div>
             <div>
-              <div className="quick-action-label">View Ledger</div>
+              <div className="quick-action-label">View Records</div>
               <div className="quick-action-sub">All {transactions.length} records</div>
             </div>
           </Link>
@@ -385,13 +385,13 @@ export default function Home() {
                   <ReceiptIcon size={18} color="#818cf8" />
                   <span>Recent Transactions</span>
                 </h2>
-                <p className="panel-subtitle">Latest records from your ledger</p>
+                <p className="panel-subtitle">Your most recent activity</p>
               </div>
               <Link
                 href="/transactions"
                 style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--color-primary)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "0.25rem" }}
               >
-                <span>View Full Ledger ({transactions.length})</span>
+                <span>View All Records ({transactions.length})</span>
                 <ArrowUpRightIcon size={14} />
               </Link>
             </div>
