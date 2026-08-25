@@ -77,17 +77,21 @@ export default function Navigation() {
     setIsBottomNavHidden(false);
   }, [pathname]);
 
-  // Auto-hide bottom nav on scroll down, reveal on scroll up (rAF-throttled)
+  // Auto-hide bottom nav on scroll down, reveal on scroll up (rAF-throttled).
+  // Requires a >=4px delta before toggling so micro-scroll doesn't flicker the bar.
   useEffect(() => {
     let lastY = window.scrollY;
     let ticking = false;
+    const DELTA = 4;
     const onScroll = () => {
       if (ticking) return;
       ticking = true;
       requestAnimationFrame(() => {
         const y = window.scrollY;
-        setIsBottomNavHidden(y > lastY && y > 96);
-        lastY = y;
+        if (Math.abs(y - lastY) >= DELTA) {
+          setIsBottomNavHidden(y > lastY && y > 96);
+          lastY = y;
+        }
         ticking = false;
       });
     };
@@ -159,7 +163,7 @@ export default function Navigation() {
           <div className="navbar-actions">
             <button
               onClick={() => setIsAddModalOpen(true)}
-              className="btn btn-primary btn-sm"
+              className="btn btn-primary btn-sm navbar-add-btn"
               aria-label="Add transaction"
             >
               <PlusIcon size={14} className="icon-wrap" />
@@ -269,9 +273,36 @@ export default function Navigation() {
       </aside>
 
       {/* Mobile Fixed Bottom Navigation Bar (Preserved as requested) */}
-      <nav className={`mobile-bottom-nav ${isBottomNavHidden ? "nav-hidden" : ""}`}>
+      <nav className={`mobile-bottom-nav ${isBottomNavHidden ? "nav-hidden" : ""}`} aria-label="Mobile navigation">
         <div className="mobile-bottom-nav-inner">
-          {navItems.map((item) => {
+          {navItems.slice(0, 2).map((item) => {
+            const Icon = item.icon;
+            const isActive = pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`mobile-tab-item ${isActive ? "active" : ""}`}
+              >
+                <div className={`mobile-tab-icon ${isActive ? "active" : ""}`}>
+                  <Icon size={18} />
+                </div>
+                <span className="mobile-tab-label">{item.label}</span>
+              </Link>
+            );
+          })}
+
+          {/* Center FAB for primary action (Add record) */}
+          <button
+            type="button"
+            onClick={() => setIsAddModalOpen(true)}
+            className="mobile-fab"
+            aria-label="Add transaction"
+          >
+            <PlusIcon size={22} />
+          </button>
+
+          {navItems.slice(2).map((item) => {
             const Icon = item.icon;
             const isActive = pathname === item.href;
             return (
