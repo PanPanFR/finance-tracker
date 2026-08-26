@@ -161,14 +161,6 @@ export default function Navigation() {
 
           {/* Top Actions */}
           <div className="navbar-actions">
-            <button
-              onClick={() => setIsAddModalOpen(true)}
-              className="btn btn-primary btn-sm navbar-add-btn"
-              aria-label="Add transaction"
-            >
-              <PlusIcon size={14} className="icon-wrap" />
-              <span>Add</span>
-            </button>
             <ThemeToggle />
             <LockButton />
           </div>

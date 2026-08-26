@@ -3,6 +3,7 @@ import { getRequestContext } from "@cloudflare/next-on-pages";
 import { verifySessionToken, getSessionSecret, SESSION_COOKIE_NAME } from "../../../../lib/auth";
 import { getDB, getAllTransactions } from "../../../../lib/db";
 import { validateCsrfToken, csrfErrorResponse } from "../../../../lib/csrf";
+import { getAiConfig, callChatCompletion, extractContent } from "../../../../lib/ai";
 
 export const runtime = "edge";
 
@@ -41,18 +42,17 @@ export async function POST(request: NextRequest) {
       type: t.type === "income" ? "income" : "expense",
     }));
 
-    // Check for Gemini API key
-    let googleApiKey = process.env.GOOGLE_API_KEY;
+    // Check for AI API key (9router)
+    let aiConfig: ReturnType<typeof getAiConfig> = null;
     try {
       const { env } = getRequestContext();
-      if ((env as Record<string, string>)?.GOOGLE_API_KEY) {
-        googleApiKey = (env as Record<string, string>).GOOGLE_API_KEY;
-      }
+      aiConfig = getAiConfig(env as Record<string, string>);
     } catch {
-      // Fallback
+      aiConfig = getAiConfig();
     }
+    if (!aiConfig) aiConfig = getAiConfig();
 
-    if (!googleApiKey) {
+    if (!aiConfig) {
       // Fallback: simple computed summary
       const totalIncome = transactions
         .filter((t) => t.type === "income")
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
       const balance = totalIncome - totalExpense;
       return NextResponse.json({
         result: [
-          "AI is disabled (GOOGLE_API_KEY not set). Summary:",
+          "AI is disabled (AI_API_KEY not set). Summary:",
           `- Total Income: Rp ${totalIncome.toLocaleString("id-ID")}`,
           `- Total Expense: Rp ${totalExpense.toLocaleString("id-ID")}`,
           `- Net Balance: Rp ${balance.toLocaleString("id-ID")}`,
@@ -71,33 +71,32 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Ask Gemini
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(googleApiKey)}`;
+    // Ask AI via 9router
     const sys = `You are a personal financial analyst assistant. Provide clear, concise, well-structured financial insights without markdown bullets (*) or list decorators. Use line breaks, clean headers, and simple summaries.`;
     const nowWIB = new Date().toLocaleString("en-US", { timeZone: "Asia/Jakarta" });
-    const prompt = `${sys}\nCurrent date/time (WIB): ${nowWIB}\n\nTransaction JSON Data (up to 200 items):\n${JSON.stringify(transactions)}\n\nUser Question: "${question}"\n\nREQUIRED FORMAT (no bullets or asterisks):\nReport for <period/date>:\nTotal Expenses: Rp xxx\nTotal Income: Rp xxx\nNet Balance: Rp xxx\n\nExpenses by Category:\nCategory A: Rp xxx\nCategory B: Rp xxx\n\nNotes (optional, max 2 lines).\n\nDo not use *, -, or bullet numbers. Plain readable text. If no relevant data, respond with: No relevant data found.`;
+    const userPrompt = `Current date/time (WIB): ${nowWIB}\n\nTransaction JSON Data (up to 200 items):\n${JSON.stringify(transactions)}\n\nUser Question: "${question}"\n\nREQUIRED FORMAT (no bullets or asterisks):\nReport for <period/date>:\nTotal Expenses: Rp xxx\nTotal Income: Rp xxx\nNet Balance: Rp xxx\n\nExpenses by Category:\nCategory A: Rp xxx\nCategory B: Rp xxx\n\nNotes (optional, max 2 lines).\n\nDo not use *, -, or bullet numbers. Plain readable text. If no relevant data, respond with: No relevant data found.`;
 
     let res: Response;
     try {
-      res = await fetch(geminiUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.2, maxOutputTokens: 512 },
-        }),
-      });
+      res = await callChatCompletion(
+        aiConfig,
+        [
+          { role: "system", content: sys },
+          { role: "user", content: userPrompt },
+        ],
+        { temperature: 0.2, max_tokens: 512 }
+      );
     } catch (e) {
-      console.error("AI Report - Gemini network error:", e);
+      console.error("AI Report - AI network error:", e);
       return NextResponse.json(
-        { error: "Gemini request failed", details: e instanceof Error ? e.message : String(e) },
+        { error: "AI request failed", details: e instanceof Error ? e.message : String(e) },
         { status: 502 }
       );
     }
 
     if (!res.ok) {
       const text = await res.text();
-      console.error("AI Report - Gemini error:", res.status, text);
+      console.error("AI Report - AI error:", res.status, text);
       return NextResponse.json(
         { error: "Failed to get AI response", status: res.status, details: text },
         { status: res.status }
@@ -105,7 +104,7 @@ export async function POST(request: NextRequest) {
     }
 
     const dataJson = await res.json();
-    let reply: string = dataJson?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "No response generated.";
+    let reply: string = (extractContent(dataJson)?.trim() || "No response generated.");
     // Sanitize
     reply = reply
       .split("\n")

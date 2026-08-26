@@ -4,6 +4,12 @@ compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = ".vercel/output/static"
 
 # Pages / Workers will pick up these bindings automatically
+# AI config is via env vars (set in Cloudflare Pages Dashboard > Settings > Environment Variables):
+# AI_BASE_URL=https://9router.panpan.my.id/v1
+# AI_API_KEY=sk-...
+# AI_MODEL=gemini-2.0-flash (or gpt-4o-mini)
+# Legacy GOOGLE_API_KEY still supported as fallback for AI_API_KEY
+
 [[d1_databases]]
 binding = "DB"
 database_name = "finance-tracker-db"
