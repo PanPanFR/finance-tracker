@@ -179,6 +179,7 @@ export default function Navigation() {
         className={`sidebar-drawer ${isSidebarOpen ? "open" : ""}`}
         aria-label="Dashboard navigation menu"
         aria-hidden={!isSidebarOpen}
+        inert={!isSidebarOpen}
       >
         {/* Drawer Header */}
         <div className="sidebar-header">

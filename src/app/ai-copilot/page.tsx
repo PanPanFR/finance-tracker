@@ -4,7 +4,6 @@ import React, { useState, type ChangeEvent } from "react";
 import Navigation from "../../components/Navigation";
 import { useAuth } from "../../contexts/AuthContext";
 import PasswordGate from "../../components/PasswordGate";
-import { scanReceipt } from "../../lib/ocr";
 import { askReport } from "../../lib/aiReport";
 import { useToast } from "../../components/Toast";
 import { apiFetch } from "../../lib/client-api";
@@ -76,6 +75,8 @@ export default function AiCopilotPage() {
     setOcrProgress("Extracting text from receipt image...");
 
     try {
+      // Lazy-load tesseract.js (~2MB) only when OCR is actually used
+      const { scanReceipt } = await import("../../lib/ocr");
       const text = await scanReceipt(file);
       setOcrProgress("Parsing line items and amounts with AI...");
       const res = await apiFetch("/api/ai/parse", {

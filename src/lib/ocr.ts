@@ -46,9 +46,13 @@ async function preprocessImage(file: File): Promise<Blob> {
 
 export async function scanReceipt(file: File, options: ScanOptions = {}): Promise<string> {
   const lang = options.language || "eng+ind";
-  // Use Tesseract v6 API: pass language directly; do not pass functions via options
-  const worker = await createWorker(lang);
+  // Track the worker handle so partially-initialized workers still get terminated
+  // if setParameters/recognize throw (prevents WASM worker leaks on error paths).
+  let worker: Awaited<ReturnType<typeof createWorker>> | null = null;
   try {
+    // Use Tesseract v6 API: pass language directly; do not pass functions via options
+    worker = await createWorker(lang);
+
     // Guide OCR towards receipt text (PSM 6 = SINGLE_BLOCK)
     await worker.setParameters({
       tessedit_char_whitelist: "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-/:,.@()%+ ",
@@ -68,7 +72,7 @@ export async function scanReceipt(file: File, options: ScanOptions = {}): Promis
 
     return result?.data?.text || "";
   } finally {
-    await worker.terminate();
+    if (worker) await worker.terminate().catch(() => {});
   }
 }
  

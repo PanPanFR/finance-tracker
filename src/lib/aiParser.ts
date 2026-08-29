@@ -78,8 +78,6 @@ function manualParseFallback(input: string): ParsedTransaction[] | null {
 
 export async function parseTransaction(input: string): Promise<ParsedTransaction[] | null> {
   try {
-    console.log("AI Parser - Input:", input);
-
     const res = await fetch("/api/ai/parse", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -111,7 +109,6 @@ export async function parseTransaction(input: string): Promise<ParsedTransaction
     // Try manual fallback
     const fallbackResult = manualParseFallback(input);
     if (fallbackResult) {
-      console.log("Manual fallback successful:", fallbackResult);
       return fallbackResult;
     }
 

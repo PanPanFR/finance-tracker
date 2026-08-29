@@ -10,20 +10,32 @@ export const runtime = "edge";
 // Rate limiting configuration
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
 const MAX_REQUESTS_PER_WINDOW = 10;
-const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
 
-function checkRateLimit(key: string): boolean {
-  const now = Date.now();
-  const entry = rateLimitMap.get(key);
-
-  if (!entry || now > entry.resetTime) {
-    rateLimitMap.set(key, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
+/**
+ * D1-backed sliding-window limiter. In-memory Maps reset on every Workers
+ * cold start, so counters live in D1 instead. Single atomic upsert:
+ * expired window resets to 1, otherwise increments. Fails open if D1 is
+ * unavailable (limit is best-effort, not security-critical).
+ */
+async function checkRateLimit(key: string): Promise<boolean> {
+  try {
+    const now = Date.now();
+    const windowStart = now - RATE_LIMIT_WINDOW;
+    const result = await getDB()
+      .prepare(
+        `INSERT INTO rate_limits (key, window_start, count)
+         VALUES (?, ?, 1)
+         ON CONFLICT(key) DO UPDATE SET
+           count = CASE WHEN rate_limits.window_start < ? THEN 1 ELSE rate_limits.count + 1 END,
+           window_start = CASE WHEN rate_limits.window_start < ? THEN excluded.window_start ELSE rate_limits.window_start END
+         RETURNING count`
+      )
+      .bind(key, now, windowStart, windowStart)
+      .first<{ count: number }>();
+    return (result?.count ?? 0) <= MAX_REQUESTS_PER_WINDOW;
+  } catch {
     return true;
   }
-
-  if (entry.count >= MAX_REQUESTS_PER_WINDOW) return false;
-  entry.count++;
-  return true;
 }
 
 async function requireAuth(request: NextRequest): Promise<boolean> {
@@ -46,7 +58,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Rate Limiting
-    if (!checkRateLimit("global")) {
+    if (!(await checkRateLimit("global"))) {
       return NextResponse.json(
         { error: "Rate limit exceeded", details: `Maximum ${MAX_REQUESTS_PER_WINDOW} requests per minute` },
         { status: 429 }

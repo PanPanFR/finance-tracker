@@ -47,7 +47,8 @@ export async function POST(request: NextRequest) {
     response.cookies.set(SESSION_COOKIE_NAME, token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
+      // strict: no cross-site POST needs; cookie never sent on cross-site navigations
+      sameSite: "strict",
       path: "/",
       maxAge: Math.floor(SESSION_EXPIRY_MS / 1000),
     });

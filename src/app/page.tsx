@@ -389,7 +389,7 @@ export default function Home() {
               </div>
               <Link
                 href="/transactions"
-                style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--color-primary)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "0.25rem" }}
+                style={{ fontSize: "0.75rem", fontWeight: 600, color: "var(--color-primary-text)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: "0.25rem" }}
               >
                 <span>View All Records ({transactions.length})</span>
                 <ArrowUpRightIcon size={14} />

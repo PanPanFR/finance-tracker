@@ -22,8 +22,8 @@ jobs:
 
       - name: Build for Cloudflare Pages
         run: npx @cloudflare/next-on-pages
-        env:
-          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        # No build-time secrets: AI_API_KEY / GOOGLE_API_KEY are read at runtime
+        # from the Cloudflare request context (set them in Pages dashboard env vars).
 
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3

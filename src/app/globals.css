@@ -18,9 +18,12 @@
   --text-muted: #86868f;
   --text-dim: #7c7c88;
 
-  --color-primary: #6366f1;
+  /* #5b5bd6 keeps white text at 5.37:1 (WCAG AA); #6366f1 was 4.46:1 */
+  --color-primary: #5b5bd6;
   --color-primary-hover: #4f46e5;
   --color-primary-glow: rgba(99, 102, 241, 0.15);
+  /* Accessible indigo for text/links on dark surfaces (5.8:1 on --bg-card) */
+  --color-primary-text: #818cf8;
   
   --color-income: #10b981;
   --color-income-bg: rgba(16, 185, 129, 0.12);
@@ -68,6 +71,7 @@ html.light {
   --text-dim: #6d6d78;
 
   --color-primary-glow: rgba(99, 102, 241, 0.12);
+  --color-primary-text: #4338ca;
   --color-income-bg: rgba(16, 185, 129, 0.14);
   --color-expense-bg: rgba(244, 63, 94, 0.10);
 
@@ -783,7 +787,7 @@ html, body {
 }
 
 .mobile-tab-item.active {
-  color: var(--color-primary);
+  color: var(--color-primary-text);
 }
 
 .mobile-tab-icon {
